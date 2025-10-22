@@ -5,12 +5,17 @@
 #include <LittleFS.h>
 #include <vector>
 
+// WIFI Status LED
+#ifndef WIFI_STATUS_LED
+#define WIFI_STATUS_LED 2
+#endif
+
 // -------- SoftAP config --------
-const char* AP_SSID = "Verizon_7DGDM4";
-const char* AP_PASS = "brave-yak4-washed-up";
+const char* AP_SSID = "BlockParty";
+const char* AP_PASS = "craft123";
 
 // -------- HTTP + WS --------
-AsyncWebServer server(8080);
+AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
 // ---- Big embedded page (edit freely) ----
@@ -19,71 +24,105 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 <html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Block Party</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, Arial, sans-serif; margin: 16px; }
     #status { padding: 6px 10px; display:inline-block; border-radius:6px; background:#eef; }
-    button { margin-right:8px; }
-    table { border-collapse: collapse; margin-top:12px; width:100%; }
-    th, td { padding:6px 8px; border-bottom:1px solid #eee; text-align:left; }
     .badge { padding: 2px 6px; border-radius: 6px; font-size: 12px; }
-    .ok { background:#c6f6d5; } .out{ background:#fed7d7; } .disc{background:#e2e8f0;}
+    .ok { background:#c6f6d5; }
+    .out { background:#fed7d7; }
+    .disc { background:#e2e8f0; }
+    table { border-collapse: collapse; width: 100%; margin-top:12px; }
+    th, td { border-bottom: 1px solid #eee; text-align: left; padding: 6px 8px; }
+    .controls { display:flex; gap:8px; align-items: center; flex-wrap: wrap; }
+    input[type=number]{ width:90px; }
   </style>
 </head>
 <body>
-  <h1>Block Party — Central (Embedded)</h1>
+  <h1>Block Party — Multiplayer Bop-It</h1>
   <div id="status">Connecting…</div>
 
-  <div style="margin:12px 0;">
-    <button onclick="sendAdmin('start')">Start</button>
-    <button onclick="sendAdmin('pause')">Pause</button>
-    <button onclick="sendAdmin('resume')">Resume</button>
-    <button onclick="sendAdmin('reset')">Reset</button>
+  <div class="controls" style="margin:12px 0;">
+    <button onclick="startGame()">Start</button>
+    <button onclick="pauseGame()">Pause</button>
+    <button onclick="resumeGame()">Resume</button>
+    <button onclick="resetGame()">Reset</button>
+    <span>Options:</span>
+    <label>Round0(ms) <input id="round0" type="number" value="2500"></label>
+    <label>Decay(ms) <input id="decay" type="number" value="150"></label>
+    <label>Min(ms)   <input id="minms" type="number" value="800"></label>
   </div>
 
   <h3 id="phaseRound"></h3>
-  <table>
-    <thead><tr><th>Player</th><th>Block</th><th>In Game</th><th>Score</th><th>Conn</th></tr></thead>
-    <tbody id="tbody"></tbody>
+
+  <table id="table">
+    <thead><tr><th>Player</th><th>Block</th><th>In Game</th><th>Score</th><th>Conn</th><th>Rename</th></tr></thead>
+    <tbody></tbody>
   </table>
 
   <script>
-    const ws = new WebSocket(`ws://${location.host}/ws`);
-    const state = { phase:'LOBBY', round:-1, players:[] };
+    const ws = new WebSocket(`ws://${window.location.host}/ws`);
+    const state = { phase:'LOBBY', round:0, players:[] };
 
-    ws.onopen = () => document.getElementById('status').textContent = 'Connected';
-    ws.onclose = () => document.getElementById('status').textContent = 'Disconnected';
-    ws.onmessage = (e) => {
+    ws.onopen = () => {
+      document.getElementById('status').textContent = 'Connected';
+    };
+    ws.onclose = () => {
+      document.getElementById('status').textContent = 'Disconnected';
+    };
+    ws.onmessage = (ev) => {
       try {
-        const msg = JSON.parse(e.data);
+        const msg = JSON.parse(ev.data);
         if (msg.type === 'state') {
           state.phase = msg.phase;
           state.round = msg.round;
           state.players = msg.players || [];
           render();
         }
-      } catch (_) {}
+      } catch(e) {}
     };
 
-    function sendAdmin(action) {
-      ws.send(JSON.stringify({type:'admin', action}));
+    function sendAdmin(payload) {
+      ws.send(JSON.stringify(Object.assign({type:'admin'}, payload)));
+    }
+
+    function startGame() {
+      const round0 = +document.getElementById('round0').value || 2500;
+      const decay  = +document.getElementById('decay').value || 150;
+      const minms  = +document.getElementById('minms').value || 800;
+      sendAdmin({action:'start', round0Ms:round0, decayMs:decay, minMs:minms});
+    }
+    function pauseGame(){ sendAdmin({action:'pause'}); }
+    function resumeGame(){ sendAdmin({action:'resume'}); }
+    function resetGame(){ sendAdmin({action:'reset'}); }
+
+    function renameBlock(bid, name){
+      sendAdmin({action:'rename', blockId:bid, name});
     }
 
     function render() {
       document.getElementById('phaseRound').textContent =
-        `Phase: ${state.phase} • Round: ${state.round >= 0 ? state.round : '-'}`;
+        `Phase: ${state.phase}   •   Round: ${state.round >= 0 ? state.round : '-'}`;
 
-      const tb = document.getElementById('tbody');
+      const tb = document.querySelector('#table tbody');
       tb.innerHTML = '';
-      for (const p of state.players) {
+      const sorted = [...state.players].sort((a,b)=> b.score - a.score);
+      for (const p of sorted) {
         const tr = document.createElement('tr');
+        const inBadge = `<span class="badge ${p.inGame?'ok':'out'}">${p.inGame?'IN':'OUT'}</span>`;
+        const cBadge  = `<span class="badge ${p.connected?'ok':'disc'}">${p.connected?'ON':'OFF'}</span>`;
+
         tr.innerHTML = `
           <td>${p.name}</td>
           <td>${p.blockId}</td>
-          <td><span class="badge ${p.inGame?'ok':'out'}">${p.inGame?'IN':'OUT'}</span></td>
+          <td>${inBadge}</td>
           <td>${p.score}</td>
-          <td><span class="badge ${p.connected?'ok':'disc'}">${p.connected?'ON':'OFF'}</span></td>`;
+          <td>${cBadge}</td>
+          <td>
+            <input size="10" value="${p.name}" id="nm-${p.blockId}">
+            <button onclick="renameBlock('${p.blockId}', document.getElementById('nm-${p.blockId}').value)">Save</button>
+          </td>`;
         tb.appendChild(tr);
       }
     }
@@ -125,9 +164,9 @@ struct GameState {
 // -------- Storage --------
 /// @todo consider using a map instead of vector if we can in ESP32
 std::vector<Player> players = {
-  {"B1","Sam",  true,  true,  3},
-  {"B2","Alex", true,  false, 2},
-  {"B3","Riley",true,  true,  5},
+  {"B1","Isaac",  true,  true,  3},
+  {"B2","Ariana", true,  false, 2},
+  {"B3","Logan",true,  true,  5},
 };
 
 struct ClientMeta {
@@ -185,22 +224,24 @@ int aliveCount() {
 }
 
 void broadcastStateToWeb() {
-  StaticJsonDocument<1024> doc;
+  JSONVar doc;
   doc["type"] = "state";
   doc["phase"] = phaseToStr(gs.phase);
   doc["round"] = gs.round;
 
-  JsonArray arr = doc.createNestedArray("players");
+  JSONVar arr;
+  int i = 0;
   for (auto &p : players) {
-    JsonObject o = arr.createNestedObject();
-    o["blockId"] = p.blockId;
-    o["name"]    = p.name;
-    o["inGame"]  = p.inGame;
-    o["score"]   = p.score;
-    o["connected"] = p.connected;
+    JSONVar playerObj;
+    playerObj["blockId"] = p.blockId;
+    playerObj["name"]    = p.name;
+    playerObj["inGame"]  = p.inGame;
+    playerObj["score"]   = p.score;
+    playerObj["connected"] = p.connected;
+    arr[i++] = playerObj;
   }
-  String out;
-  serializeJson(doc, out);
+  doc["players"] = arr;
+  String out = JSON.stringify(doc);
   
   // Send to web clients
   for (const auto& c : clients) {
@@ -212,16 +253,15 @@ void broadcastStateToWeb() {
 
 /// @brief Send new round info only to blocks that are in the game
 void broadcastRoundToBlocks() {
-  StaticJsonDocument<256> doc;
+  JSONVar doc;
   doc["type"] = "round";
   doc["round"] = gs.round;
   doc["cmd"] = gs.currentCmd;
-  doc["roundStartMs"] = gs.roundStartMs;    // When round officially starts
+  doc["roundStartMs"] = (unsigned long)gs.roundStartMs;    // When round officially starts
   doc["gameTimeMs"] = gs.currentMsWindow;   // How long players have to respond
-  doc["deadlineMs"] = gs.deadlineMs;        // When server will end round
+  doc["deadlineMs"] = (unsigned long)gs.deadlineMs;        // When server will end round
   
-	String out;
-	serializeJson(doc, out);
+	String out = JSON.stringify(doc);
 	for (const auto& c : clients) {
 		if (c.role == "block" && c.blockId.length()) {
 			Player *p = getPlayer(c.blockId);
@@ -275,8 +315,8 @@ void endRound() {
 }
 
 // -------- WebSocket events --------
-void handleBlockHello(AsyncWebSocketClient* client, JsonDocument& doc) {
-  String blockId = doc["blockId"] | "";
+void handleBlockHello(AsyncWebSocketClient* client, JSONVar& doc) {
+  String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
   auto *meta = getClient(client->id());
   if (!meta) return;
   meta->role = "block";
@@ -290,22 +330,22 @@ void handleBlockHello(AsyncWebSocketClient* client, JsonDocument& doc) {
   broadcastStateToWeb();
 }
 
-void handleBlockStatus(JsonDocument& doc) {
-  String blockId = doc["blockId"] | "";
+void handleBlockStatus(JSONVar& doc) {
+  String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
   Player *p = getPlayer(blockId);
   if (!p) return;
   p->connected = true;
   p->lastSeenMs = millis();
 }
 
-void handleBlockResult(JsonDocument& doc) {
-  int round = doc["round"] | -999;
+void handleBlockResult(JSONVar& doc) {
+  int round = doc.hasOwnProperty("round") ? (int)doc["round"] : -999;
   if (round != gs.round) return;
-  String blockId = doc["blockId"] | "";
+  String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
   Player *p = getPlayer(blockId);
   if (!p || !p->inGame) return;
 
-  bool actionDone = doc["actionDone"] | false;
+  bool actionDone = doc.hasOwnProperty("actionDone") ? (bool)doc["actionDone"] : false;
   p->reported = true;
   p->success  = actionDone;
   if (actionDone) {
@@ -314,14 +354,14 @@ void handleBlockResult(JsonDocument& doc) {
   broadcastStateToWeb();
 }
 
-void handleAdmin(AsyncWebSocketClient* client, JsonDocument& doc) {
-  String action = doc["action"] | "";
+void handleAdmin(AsyncWebSocketClient* client, JSONVar& doc) {
+  String action = doc.hasOwnProperty("action") ? (const char*)doc["action"] : "";
   if (action == "start") {
     gs.phase = Phase::RUNNING;
     gs.round = -1;
-    gs.round0Ms = doc["round0Ms"] | 2500;
-    gs.decayMs  = doc["decayMs"]  | 150;
-    gs.minMs    = doc["minMs"]    | 800;
+    gs.round0Ms = doc.hasOwnProperty("round0Ms") ? (int)doc["round0Ms"] : 2500;
+    gs.decayMs  = doc.hasOwnProperty("decayMs") ? (int)doc["decayMs"] : 150;
+    gs.minMs    = doc.hasOwnProperty("minMs") ? (int)doc["minMs"] : 800;
     gs.currentMsWindow = gs.round0Ms;
 
     // mark all connected as inGame
@@ -345,8 +385,8 @@ void handleAdmin(AsyncWebSocketClient* client, JsonDocument& doc) {
     for (auto &p : players) { p.inGame = false; p.score = 0; p.reported=false; p.success=false; }
     broadcastStateToWeb();
   } else if (action == "rename") {
-    String blockId = doc["blockId"] | "";
-    String nm  = doc["name"] | "";
+    String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
+    String nm  = doc.hasOwnProperty("name") ? (const char*)doc["name"] : "";
     Player *p = getPlayer(blockId);
     if (p && nm.length()) { p->name = nm; broadcastStateToWeb(); }
   }
@@ -370,11 +410,11 @@ void onWsEvent(AsyncWebSocket       * server,
     removeClient(client->id());
   } else if (type == WS_EVT_DATA) {
     // Parse JSON
-    StaticJsonDocument<1024> doc;
-    DeserializationError err = deserializeJson(doc, data, len);
-    if (err) return;
+    String jsonString = String((char*)data).substring(0, len);
+    JSONVar doc = JSON.parse(jsonString);
+    if (JSON.typeof(doc) == "undefined") return;
 
-    const char* t = doc["type"] | "";
+    const char* t = doc.hasOwnProperty("type") ? (const char*)doc["type"] : "";
     if (!strcmp(t, "hello")) {
       handleBlockHello(client, doc);
     } else if (!strcmp(t, "status")) {
@@ -394,32 +434,6 @@ void onWsEvent(AsyncWebSocket       * server,
 
 // -------- Setup HTTP + File System --------
 void setupHttp() {
-  // Initialize LittleFS
-  // if (!LittleFS.begin(true)) {
-  //   Serial.println("LittleFS mount failed!");
-  //   return;
-  // }
-  
-  // // Check if index.html exists in LittleFS
-  // if (!LittleFS.exists("/index.html")) {
-  //   Serial.println("Warning: /index.html not found in LittleFS!");
-  //   Serial.println("You need to upload the webapp/index.html file to the ESP32's filesystem.");
-  //   Serial.println("Create a 'data' folder in your sketch directory, copy index.html there,");
-  //   Serial.println("and use 'ESP32 Sketch Data Upload' tool.");
-  // }
-  
-  // // Serve static files from LittleFS
-  // server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
-  
-  // // Handle 404 errors - try to serve index.html as fallback
-  // server.onNotFound([](AsyncWebServerRequest *req){ 
-  //   if (LittleFS.exists("/index.html")) {
-  //     req->send(LittleFS, "/index.html", "text/html");
-  //   } else {
-  //     req->send(404, "text/plain", "File not found. Please upload webapp files to ESP32 filesystem.");
-  //   }
-  // });
-
   // Serve embedded page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* req){
     req->send_P(200, "text/html", INDEX_HTML);
@@ -430,7 +444,7 @@ void setupHttp() {
   server.begin();
   
   Serial.println("HTTP server started");
-  Serial.println("Web interface should be available at: http://192.168.4.1:8080");
+  Serial.println("Web interface should be available at: http://192.168.4.1:80");
 }
 
 // -------- Setup / Loop --------
@@ -439,10 +453,20 @@ uint32_t lastPruneMs = 0;
 uint32_t lastRoundCheckMs = 0;
 
 void setup() {
+  // WiFi Status LED (HIGH = Connected)
+  pinMode(WIFI_STATUS_LED, OUTPUT);
+  digitalWrite(WIFI_STATUS_LED, LOW);
+
+  //Setup Serial
   Serial.begin(115200);
+
+  // Settup WiFi AP
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 8);
+  bool ok = WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 8);
   Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
+  if (ok) {
+    digitalWrite(WIFI_STATUS_LED, HIGH); // solid ON = AP up
+  }
 
   setupHttp();
 }
@@ -451,10 +475,10 @@ void loop() {
   // 1) push time sync to blocks (~1s)
   if (millis() - lastSyncMs > 1000) {
     lastSyncMs = millis();
-    StaticJsonDocument<128> doc;
+    JSONVar doc;
     doc["type"] = "sync";
-    doc["serverTimeMs"] = (uint64_t)millis();
-    String out; serializeJson(doc, out);
+    doc["serverTimeMs"] = (unsigned long)millis();
+    String out = JSON.stringify(doc);
     ws.textAll(out);
   }
 
