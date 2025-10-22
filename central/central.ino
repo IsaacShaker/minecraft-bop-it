@@ -1,17 +1,96 @@
 // ================= Central.ino (ESP32) =================
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
-#include <ArduinoJson.h>
+#include <Arduino_JSON.h>
 #include <LittleFS.h>
 #include <vector>
 
 // -------- SoftAP config --------
-const char* AP_SSID = "BlockParty";
-const char* AP_PASS = "craft123";
+const char* AP_SSID = "Verizon_7DGDM4";
+const char* AP_PASS = "brave-yak4-washed-up";
 
 // -------- HTTP + WS --------
 AsyncWebServer server(8080);
 AsyncWebSocket ws("/ws");
+
+// ---- Big embedded page (edit freely) ----
+static const char INDEX_HTML[] PROGMEM = R"HTML(
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Block Party</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 16px; }
+    #status { padding: 6px 10px; display:inline-block; border-radius:6px; background:#eef; }
+    button { margin-right:8px; }
+    table { border-collapse: collapse; margin-top:12px; width:100%; }
+    th, td { padding:6px 8px; border-bottom:1px solid #eee; text-align:left; }
+    .badge { padding: 2px 6px; border-radius: 6px; font-size: 12px; }
+    .ok { background:#c6f6d5; } .out{ background:#fed7d7; } .disc{background:#e2e8f0;}
+  </style>
+</head>
+<body>
+  <h1>Block Party — Central (Embedded)</h1>
+  <div id="status">Connecting…</div>
+
+  <div style="margin:12px 0;">
+    <button onclick="sendAdmin('start')">Start</button>
+    <button onclick="sendAdmin('pause')">Pause</button>
+    <button onclick="sendAdmin('resume')">Resume</button>
+    <button onclick="sendAdmin('reset')">Reset</button>
+  </div>
+
+  <h3 id="phaseRound"></h3>
+  <table>
+    <thead><tr><th>Player</th><th>Block</th><th>In Game</th><th>Score</th><th>Conn</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <script>
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    const state = { phase:'LOBBY', round:-1, players:[] };
+
+    ws.onopen = () => document.getElementById('status').textContent = 'Connected';
+    ws.onclose = () => document.getElementById('status').textContent = 'Disconnected';
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'state') {
+          state.phase = msg.phase;
+          state.round = msg.round;
+          state.players = msg.players || [];
+          render();
+        }
+      } catch (_) {}
+    };
+
+    function sendAdmin(action) {
+      ws.send(JSON.stringify({type:'admin', action}));
+    }
+
+    function render() {
+      document.getElementById('phaseRound').textContent =
+        `Phase: ${state.phase} • Round: ${state.round >= 0 ? state.round : '-'}`;
+
+      const tb = document.getElementById('tbody');
+      tb.innerHTML = '';
+      for (const p of state.players) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${p.name}</td>
+          <td>${p.blockId}</td>
+          <td><span class="badge ${p.inGame?'ok':'out'}">${p.inGame?'IN':'OUT'}</span></td>
+          <td>${p.score}</td>
+          <td><span class="badge ${p.connected?'ok':'disc'}">${p.connected?'ON':'OFF'}</span></td>`;
+        tb.appendChild(tr);
+      }
+    }
+  </script>
+</body>
+</html>
+)HTML";
 
 // -------- Game --------
 enum class Phase { LOBBY, RUNNING, PAUSED, DONE };
@@ -45,7 +124,11 @@ struct GameState {
 
 // -------- Storage --------
 /// @todo consider using a map instead of vector if we can in ESP32
-std::vector<Player> players;
+std::vector<Player> players = {
+  {"B1","Sam",  true,  true,  3},
+  {"B2","Alex", true,  false, 2},
+  {"B3","Riley",true,  true,  5},
+};
 
 struct ClientMeta {
   uint32_t id;
@@ -312,29 +395,34 @@ void onWsEvent(AsyncWebSocket       * server,
 // -------- Setup HTTP + File System --------
 void setupHttp() {
   // Initialize LittleFS
-  if (!LittleFS.begin(true)) {
-    Serial.println("LittleFS mount failed!");
-    return;
-  }
+  // if (!LittleFS.begin(true)) {
+  //   Serial.println("LittleFS mount failed!");
+  //   return;
+  // }
   
-  // Check if index.html exists in LittleFS
-  if (!LittleFS.exists("/index.html")) {
-    Serial.println("Warning: /index.html not found in LittleFS!");
-    Serial.println("You need to upload the webapp/index.html file to the ESP32's filesystem.");
-    Serial.println("Create a 'data' folder in your sketch directory, copy index.html there,");
-    Serial.println("and use 'ESP32 Sketch Data Upload' tool.");
-  }
+  // // Check if index.html exists in LittleFS
+  // if (!LittleFS.exists("/index.html")) {
+  //   Serial.println("Warning: /index.html not found in LittleFS!");
+  //   Serial.println("You need to upload the webapp/index.html file to the ESP32's filesystem.");
+  //   Serial.println("Create a 'data' folder in your sketch directory, copy index.html there,");
+  //   Serial.println("and use 'ESP32 Sketch Data Upload' tool.");
+  // }
   
-  // Serve static files from LittleFS
-  server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+  // // Serve static files from LittleFS
+  // server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
   
-  // Handle 404 errors - try to serve index.html as fallback
-  server.onNotFound([](AsyncWebServerRequest *req){ 
-    if (LittleFS.exists("/index.html")) {
-      req->send(LittleFS, "/index.html", "text/html");
-    } else {
-      req->send(404, "text/plain", "File not found. Please upload webapp files to ESP32 filesystem.");
-    }
+  // // Handle 404 errors - try to serve index.html as fallback
+  // server.onNotFound([](AsyncWebServerRequest *req){ 
+  //   if (LittleFS.exists("/index.html")) {
+  //     req->send(LittleFS, "/index.html", "text/html");
+  //   } else {
+  //     req->send(404, "text/plain", "File not found. Please upload webapp files to ESP32 filesystem.");
+  //   }
+  // });
+
+  // Serve embedded page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest* req){
+    req->send_P(200, "text/html", INDEX_HTML);
   });
   
   ws.onEvent(onWsEvent);
