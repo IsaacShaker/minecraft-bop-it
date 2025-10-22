@@ -17,7 +17,7 @@ constexpr int PIN_BUTTON          = 14;  // "Mine it" button
 constexpr int PIN_COMMAND_SPEAKER = 4;  // command speaker pin    //TBD
 //TODO: ADD red led 
 
-// RFID pins 
+// RFID pins //do not need this setup
 constexpr int PIN_RFID_SDA  = 5;
 constexpr int PIN_RFID_SCK  = 6;
 constexpr int PIN_RFID_MOSI = 7;
