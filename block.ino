@@ -92,8 +92,17 @@ void stopRoundTimer() {
 // -------- Sensors --------
 void sensorsInit() {
   Wire.begin();
+  // pinMode(buttonPin, INPUT_PULLUP);
+  // pinMode(greenPin, OUTPUT);
+  
   /// @todo accelerometer init
+  Wire.begin(21, 22);     // MPU6050 on I2C0
+  mpu.initialize();   //shaker sensor setup
+  
   /// @todo RFID init
+  Wire1.begin(18, 19);   // PN532 on I2C1  
+  nfc.begin();    //rfid reader setup
+  nfc.SAMConfig();   //rfid reader setup
 }
 
 bool detectMine() {
@@ -132,11 +141,34 @@ bool detectMine() {
 
 bool detectShake() {
   /// @todo: read accelerometer
+  int16_t ax, ay, az;
+  mpu.getAcceleration(&ax, &ay, &az);
+  float accelX = ax / 16384.0;
+  float accelY = ay / 16384.0;
+  float accelZ = az / 16384.0;
+  float magnitude = sqrt(accelX * accelX + accelY * accelY + accelZ * accelZ);\
+
+  // Better shake detection: deviation from 1g
+  float deviation = fabs(magnitude - 1.0);
+  if (deviation > 0.4) {
+    //do something
+    delay(500); // Debounce shake detection
+  }
+  
   return false;
 }
 
 bool detectPlace() {
   /// @todo: read RFID
+  uint8_t uid[7];
+  uint8_t uidLength;
+  // The 4th parameter is timeout in milliseconds - CRITICAL for non-blocking behavior
+  uint8_t success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 50);
+  
+ //if (sucess)  
+// {  do something
+//     delay(1000); // Prevent repeated reads of same card *THIS IS NEEDED
+//    }
   return false;
 }
 
@@ -301,16 +333,6 @@ void connectWiFi() {
 void setup() {
   Serial.begin(115200);
 
-  //SETUP added by Ariana
-  pinMode(buttonPin, INPUT_PULLUP);
-  pinMode(greenPin, OUTPUT);
-  Wire1.begin(18, 19);   // PN532 on I2C1   
-  Wire.begin(21, 22);     // MPU6050 on I2C0
-  mpu.initialize();   //shaker sensor setup
-  nfc.begin();    //rfid reader setup
-  nfc.SAMConfig();   //rfid reader setup
-
-  
   pinMode(PIN_LED_GREEN, OUTPUT);
   pinMode(PIN_LED_BLUE, OUTPUT);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
