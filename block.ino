@@ -6,18 +6,31 @@
 #include <SPI.h>
 #include <Preferences.h>
 
-// -------- Pins (assign to right pins when we prototype) --------
-constexpr int PIN_LED_GREEN       = 1;  // Power indicator
-constexpr int PIN_LED_BLUE        = 2;  // Synced indicator
-constexpr int PIN_BUTTON          = 3;  // "Mine it" button
-constexpr int PIN_COMMAND_SPEAKER = 4;  // command speaker pin
+#include <Adafruit_PN532.h>
+#include <MPU6050.h>
+#include <math.h>
 
-// RFID pins
+// -------- Pins (assign to right pins when we prototype) --------
+constexpr int PIN_LED_GREEN       = 5;  // Power indicator
+constexpr int PIN_LED_BLUE        = 2;  // Synced indicator //TBD
+constexpr int PIN_BUTTON          = 14;  // "Mine it" button
+constexpr int PIN_COMMAND_SPEAKER = 4;  // command speaker pin    //TBD
+//TODO: ADD red led 
+
+// RFID pins 
 constexpr int PIN_RFID_SDA  = 5;
 constexpr int PIN_RFID_SCK  = 6;
 constexpr int PIN_RFID_MOSI = 7;
 constexpr int PIN_RFID_MISO = 8;
 constexpr int PIN_RFID_RST  = 9;
+
+//SHAKER SENSOR SETUP
+MPU6050 mpu;
+
+//RFID SETUP
+#define PN532_IRQ   (2)  //IRQ pin
+#define PN532_RESET (3)  //RESET pin
+Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET, &Wire1);
 
 // -------- Network config --------
 const char* WIFI_SSID = "BlockParty";
@@ -288,6 +301,16 @@ void connectWiFi() {
 void setup() {
   Serial.begin(115200);
 
+  //SETUP added by Ariana
+  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(greenPin, OUTPUT);
+  Wire1.begin(18, 19);   // PN532 on I2C1   
+  Wire.begin(21, 22);     // MPU6050 on I2C0
+  mpu.initialize();   //shaker sensor setup
+  nfc.begin();    //rfid reader setup
+  nfc.SAMConfig();   //rfid reader setup
+
+  
   pinMode(PIN_LED_GREEN, OUTPUT);
   pinMode(PIN_LED_BLUE, OUTPUT);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
