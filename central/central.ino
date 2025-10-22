@@ -35,26 +35,44 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     .disc { background:#e2e8f0; }
     table { border-collapse: collapse; width: 100%; margin-top:12px; }
     th, td { border-bottom: 1px solid #eee; text-align: left; padding: 6px 8px; }
-    .controls { display:flex; gap:8px; align-items: center; flex-wrap: wrap; }
+    .column-container { display:flex; flex-direction: column; }
+    .row-container { display:flex; flex-direction: row; gap:8px; align-items: center; flex-wrap: wrap; }
     input[type=number]{ width:90px; }
+    button { 
+      padding: 4px 8px; 
+      border-radius: 6px; 
+      font-size: 12px; 
+      border: none; 
+      background: #e2e8f0; 
+      cursor: pointer; 
+      font-family: inherit;
+    }
+    button:hover { background: #cbd5e0; }
+    button:active { background: #a0aec0; }
   </style>
 </head>
 <body>
   <h1>Block Party — Multiplayer Bop-It</h1>
   <div id="status">Connecting…</div>
 
-  <div class="controls" style="margin:12px 0;">
-    <button onclick="startGame()">Start</button>
-    <button onclick="pauseGame()">Pause</button>
-    <button onclick="resumeGame()">Resume</button>
-    <button onclick="resetGame()">Reset</button>
-    <span>Options:</span>
-    <label>Round0(ms) <input id="round0" type="number" value="2500"></label>
-    <label>Decay(ms) <input id="decay" type="number" value="150"></label>
-    <label>Min(ms)   <input id="minms" type="number" value="800"></label>
+  <div class="column-container" style="margin:12px 0;">
+    <div class="row-container">
+      <h3>Admin Controls:</h3>
+      <button onclick="startGame()">Start</button>
+      <button onclick="pauseGame()">Pause</button>
+      <button onclick="resumeGame()">Resume</button>
+      <button onclick="resetGame()">Reset</button>
+    </div>
+    <div class="row-container">
+      <h3>Game Settings:</h3>
+      <label>Round0(ms) <input id="round0" type="number" value="2500"></label>
+      <label>Decay(ms) <input id="decay" type="number" value="150"></label>
+      <label>Min(ms)   <input id="minms" type="number" value="800"></label>
+    </div>
   </div>
 
   <h3 id="phaseRound"></h3>
+  <h3 id="Round"></h3>
 
   <table id="table">
     <thead><tr><th>Player</th><th>Block</th><th>In Game</th><th>Score</th><th>Conn</th><th>Rename</th></tr></thead>
@@ -67,6 +85,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 
     ws.onopen = () => {
       document.getElementById('status').textContent = 'Connected';
+      // Identify this client as a web interface
+      ws.send(JSON.stringify({type: 'web-hello', clientType: 'web'}));
     };
     ws.onclose = () => {
       document.getElementById('status').textContent = 'Disconnected';
@@ -93,6 +113,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       const minms  = +document.getElementById('minms').value || 800;
       sendAdmin({action:'start', round0Ms:round0, decayMs:decay, minMs:minms});
     }
+
     function pauseGame(){ sendAdmin({action:'pause'}); }
     function resumeGame(){ sendAdmin({action:'resume'}); }
     function resetGame(){ sendAdmin({action:'reset'}); }
@@ -102,8 +123,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     }
 
     function render() {
-      document.getElementById('phaseRound').textContent =
-        `Phase: ${state.phase}   •   Round: ${state.round >= 0 ? state.round : '-'}`;
+      document.getElementById('phaseRound').textContent = `Phase: ${state.phase}`;
+      document.getElementById('Round').textContent = `Round: ${state.round >= 0 ? state.round : '-'}`;
 
       const tb = document.querySelector('#table tbody');
       tb.innerHTML = '';
@@ -132,7 +153,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 )HTML";
 
 // -------- Game --------
-enum class Phase { LOBBY, RUNNING, PAUSED, DONE };
+enum class Phase { LOBBY, RUNNING, WAITING_NEXT_ROUND, PAUSED, DONE };
 
 enum class COMMAND { SHAKE, MINE, PLACE };
 
@@ -159,27 +180,26 @@ struct GameState {
   int minMs    = 800;
   uint64_t roundStartMs = 0; // server absolute
   uint64_t deadlineMs   = 0; // server absolute
+  bool pauseQueued = false; // flag to pause after current round ends
 } gs;
 
 // -------- Storage --------
 /// @todo consider using a map instead of vector if we can in ESP32
-std::vector<Player> players = {
-  {"B1","Isaac",  true,  true,  3},
-  {"B2","Ariana", true,  false, 2},
-  {"B3","Logan",true,  true,  5},
-};
+std::vector<Player> players;
 
 struct ClientMeta {
   uint32_t id;
   String role;    // "block" | "web"
   String blockId; // set if role == "block"
 };
+
 std::vector<ClientMeta> clients;
 
 Player* getPlayer(const String& blockId) {
   for (auto &p : players) if (p.blockId == blockId) return &p;
   return nullptr;
 }
+
 Player& addPlayer(const String& blockId) {
   Player* p = getPlayer(blockId);
   if (p) return *p;
@@ -192,6 +212,7 @@ ClientMeta* getClient(uint32_t id) {
   for (auto &c : clients) if (c.id == id) return &c;
   return nullptr;
 }
+
 void removeClient(uint32_t id) {
   clients.erase(std::remove_if(clients.begin(), clients.end(),
               [&](const ClientMeta& c){return c.id==id;}), clients.end());
@@ -202,6 +223,7 @@ String phaseToStr(Phase ph) {
   switch (ph) {
     case Phase::LOBBY: return "LOBBY";
     case Phase::RUNNING: return "RUNNING";
+    case Phase::WAITING_NEXT_ROUND: return "WAITING_NEXT_ROUND";
     case Phase::PAUSED: return "PAUSED";
     case Phase::DONE: return "DONE";
 		default: return "LOBBY";
@@ -223,7 +245,7 @@ int aliveCount() {
   return n;
 }
 
-void broadcastStateToWeb() {
+String buildGameStateMessage() {
   JSONVar doc;
   doc["type"] = "state";
   doc["phase"] = phaseToStr(gs.phase);
@@ -241,14 +263,27 @@ void broadcastStateToWeb() {
     arr[i++] = playerObj;
   }
   doc["players"] = arr;
-  String out = JSON.stringify(doc);
-  
-  // Send to web clients
+  return JSON.stringify(doc);
+}
+
+void broadcastStateToWeb() {
+  String message = buildGameStateMessage();
+  // Send to all web clients
   for (const auto& c : clients) {
     if (c.role == "web") {
-      ws.text(c.id, out);
+      ws.text(c.id, message);
     }
   }
+}
+
+void broadcastStateToWeb(uint32_t clientId) {
+  // Check if clientId exists in clients vector
+  auto it = std::find_if(clients.begin(), clients.end(),
+                         [clientId](const ClientMeta& c){ return c.id == clientId; });
+  if (it == clients.end()) return; // client not found
+
+  String message = buildGameStateMessage();
+  ws.text(clientId, message);
 }
 
 /// @brief Send new round info only to blocks that are in the game
@@ -311,6 +346,7 @@ void endRound() {
   }
   // Shrink window
   gs.currentMsWindow = max(gs.minMs, gs.currentMsWindow - gs.decayMs);
+  
   broadcastStateToWeb();
 }
 
@@ -330,6 +366,17 @@ void handleBlockHello(AsyncWebSocketClient* client, JSONVar& doc) {
   broadcastStateToWeb();
 }
 
+void handleWebHello(AsyncWebSocketClient* client, JSONVar& doc) {
+  auto *meta = getClient(client->id());
+  if (!meta) return;
+  meta->role = "web";
+  meta->blockId = ""; // web clients don't have block IDs
+  
+  Serial.printf("Web client connected: %u\n", client->id());
+  // Send current state to the newly connected web client
+  broadcastStateToWeb(client->id());
+}
+
 void handleBlockStatus(JSONVar& doc) {
   String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
   Player *p = getPlayer(blockId);
@@ -339,6 +386,8 @@ void handleBlockStatus(JSONVar& doc) {
 }
 
 void handleBlockResult(JSONVar& doc) {
+  if (gs.phase != Phase::RUNNING && gs.phase != Phase::WAITING_NEXT_ROUND) return;
+
   int round = doc.hasOwnProperty("round") ? (int)doc["round"] : -999;
   if (round != gs.round) return;
   String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
@@ -347,7 +396,7 @@ void handleBlockResult(JSONVar& doc) {
 
   bool actionDone = doc.hasOwnProperty("actionDone") ? (bool)doc["actionDone"] : false;
   p->reported = true;
-  p->success  = actionDone;
+  p->success = actionDone;
   if (actionDone) {
     p->score += 1;
   }
@@ -355,6 +404,14 @@ void handleBlockResult(JSONVar& doc) {
 }
 
 void handleAdmin(AsyncWebSocketClient* client, JSONVar& doc) {
+  // Verify that the client is authenticated as a web client
+  auto *meta = getClient(client->id());
+  if (!meta || meta->role != "web") {
+    Serial.printf("Unauthorized admin attempt from client %u (role: %s)\n", 
+                  client->id(), meta ? meta->role.c_str() : "unknown");
+    return;
+  }
+  
   String action = doc.hasOwnProperty("action") ? (const char*)doc["action"] : "";
   if (action == "start") {
     gs.phase = Phase::RUNNING;
@@ -369,22 +426,24 @@ void handleAdmin(AsyncWebSocketClient* client, JSONVar& doc) {
 
     nextRound();
   } else if (action == "pause") {
-    if (gs.phase == Phase::RUNNING) gs.phase = Phase::PAUSED;
+    // Queue the pausing until this round is over
+    gs.pauseQueued = true;
     broadcastStateToWeb();
   } else if (action == "resume") {
+    gs.pauseQueued = false; // Clear any queued pause
     if (gs.phase == Phase::PAUSED) {
-      gs.phase = Phase::RUNNING;
-      // optional: extend deadline slightly @todo
-      broadcastRoundToBlocks();
+      gs.phase = Phase::WAITING_NEXT_ROUND;
       broadcastStateToWeb();
     }
   } else if (action == "reset") {
     gs.phase = Phase::LOBBY;
     gs.round = -1;
     gs.currentMsWindow = gs.round0Ms;
+    gs.pauseQueued = false;
     for (auto &p : players) { p.inGame = false; p.score = 0; p.reported=false; p.success=false; }
     broadcastStateToWeb();
   } else if (action == "rename") {
+    if (gs.phase != Phase::LOBBY) return; // only allow rename in lobby
     String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
     String nm  = doc.hasOwnProperty("name") ? (const char*)doc["name"] : "";
     Player *p = getPlayer(blockId);
@@ -400,6 +459,8 @@ void onWsEvent(AsyncWebSocket       * server,
                size_t                 len) {
   if (type == WS_EVT_CONNECT) {
     clients.push_back({client->id(), "", ""});
+    // Send current state only to the newly connected client
+    broadcastStateToWeb(client->id());
   } else if (type == WS_EVT_DISCONNECT) {
     auto *meta = getClient(client->id());
     if (meta && meta->role == "block" && meta->blockId.length()) {
@@ -417,15 +478,14 @@ void onWsEvent(AsyncWebSocket       * server,
     const char* t = doc.hasOwnProperty("type") ? (const char*)doc["type"] : "";
     if (!strcmp(t, "hello")) {
       handleBlockHello(client, doc);
+    } else if (!strcmp(t, "web-hello")) {
+      handleWebHello(client, doc);
     } else if (!strcmp(t, "status")) {
       handleBlockStatus(doc);
     } else if (!strcmp(t, "result")) {
       handleBlockResult(doc);
     } else if (!strcmp(t, "admin")) {
-      // mark role as web
-      auto *meta = getClient(client->id());
-      if (meta) meta->role = "web";
-      	handleAdmin(client, doc);
+      handleAdmin(client, doc);
     } else {
       broadcastStateToWeb();
     }
@@ -499,14 +559,22 @@ void loop() {
       endRound();
       // Schedule next round start time (non-blocking approach)
       gs.roundStartMs = millis() + 800;  // 800ms delay before next round
-      gs.phase = Phase::PAUSED;  // Temporarily pause to wait for next round
+      gs.phase = Phase::WAITING_NEXT_ROUND;  // Temporarily pause to wait for next round
+      broadcastStateToWeb();
     }
   }
 
   // 4) Handle scheduled next round start
-  if (gs.phase == Phase::PAUSED && millis() >= gs.roundStartMs) {
-    gs.phase = Phase::RUNNING;
-    nextRound();
+  if (gs.phase == Phase::WAITING_NEXT_ROUND && millis() >= gs.roundStartMs) {
+    if (gs.pauseQueued) {
+        gs.pauseQueued = false;
+        gs.phase = Phase::PAUSED;
+        broadcastStateToWeb();
+    }
+    else {
+      gs.phase = Phase::RUNNING;
+      nextRound();
+    }
   }
 
   ws.cleanupClients();

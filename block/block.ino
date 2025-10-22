@@ -1,10 +1,15 @@
 // ================= Block.ino (ESP32) =================
 #include <WiFi.h>
 #include <WebSocketsClient.h>
-#include <ArduinoJson.h>
+#include <Arduino_JSON.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <Preferences.h>
+
+// WIFI Status LED
+#ifndef WIFI_STATUS_LED
+#define WIFI_STATUS_LED 2
+#endif
 
 // -------- Pins (assign to right pins when we prototype) --------
 constexpr int PIN_LED_GREEN       = 1;  // Power indicator
@@ -23,7 +28,7 @@ constexpr int PIN_RFID_RST  = 9;
 const char* WIFI_SSID = "BlockParty";
 const char* WIFI_PASS = "craft123";
 const char* WS_HOST   = "192.168.4.1";
-const uint16_t WS_PORT = 8080;
+const uint16_t WS_PORT = 80;
 const char* WS_PATH   = "/ws";
 
 // -------- IDs / persistence --------
@@ -62,10 +67,9 @@ void startRoundTimer(uint32_t timeoutMs) {
     timerEnd(roundTimer);
   }
   timeExpired = false;
-  roundTimer = timerBegin(0, 80, true); // Timer 0, prescaler 80 (1MHz), count up
-  timerAttachInterrupt(roundTimer, &onRoundTimeout, true); // Edge interrupt
-  timerAlarmWrite(roundTimer, timeoutMs * 1000, false); // Convert ms to microseconds, no reload
-  timerAlarmEnable(roundTimer);
+  roundTimer = timerBegin(1000000); // 1MHz frequency
+  timerAttachInterrupt(roundTimer, &onRoundTimeout);
+  timerAlarm(roundTimer, timeoutMs * 1000, false, 0); // Convert ms to microseconds, no reload
 }
 
 void stopRoundTimer() {
@@ -90,7 +94,7 @@ bool detectMine() {
   static int stableState = HIGH;
   static bool buttonPressed = false;
   
-  int reading = digitalRead(PIN_BUTTON);
+  int reading = 0; //digitalRead(PIN_BUTTON);
   
   // If reading changed, reset debounce timer
   if (reading != lastReading) {
@@ -150,28 +154,27 @@ void updateServerOffset(int64_t serverTimeMs) {
 // -------- WebSocket (client) --------
 WebSocketsClient ws;
 
-void wsSendJson(const JsonDocument& doc) {
-  String out;
-  serializeJson(doc, out);
+void wsSendJson(const JSONVar& doc) {
+  String out = JSON.stringify(doc);
   ws.sendTXT(out);
 }
 
 void sendHello() {
-  StaticJsonDocument<256> doc;
+  JSONVar doc;
   doc["type"] = "hello";
   doc["blockId"] = BLOCK_ID;
   wsSendJson(doc);
 }
 
 void sendStatus() {
-  StaticJsonDocument<256> doc;
+  JSONVar doc;
   doc["type"] = "status";
   doc["blockId"] = BLOCK_ID;
   wsSendJson(doc);
 }
 
 void sendResult() {
-  StaticJsonDocument<256> doc;
+  JSONVar doc;
   doc["type"] = "result";
   doc["blockId"] = BLOCK_ID;
   doc["round"] = currentRound;
@@ -179,8 +182,8 @@ void sendResult() {
   wsSendJson(doc);
 }
 
-void handleRoundMessage(JsonDocument& doc) {
-  int newRound = doc["round"] | -1;
+void handleRoundMessage(JSONVar& doc) {
+  int newRound = doc.hasOwnProperty("round") ? (int)doc["round"] : -1;
   
   // Ignore duplicate or old round messages
   if (newRound <= currentRound && currentRound != -1) {
@@ -191,10 +194,10 @@ void handleRoundMessage(JsonDocument& doc) {
   stopRoundTimer();
   
   currentRound = newRound;
-  currentCmd   = (const char*)doc["cmd"] | "";
-  roundStartServerMs = (int64_t)(doc["roundStartMs"] | 0);
-  deadlineServerMs = (int64_t)(doc["deadlineMs"] | 0);
-  gameTimeMs = doc["gameTimeMs"] | 2000;
+  currentCmd   = doc.hasOwnProperty("cmd") ? (const char*)doc["cmd"] : "";
+  roundStartServerMs = doc.hasOwnProperty("roundStartMs") ? (int64_t)(unsigned long)doc["roundStartMs"] : 0;
+  deadlineServerMs = doc.hasOwnProperty("deadlineMs") ? (int64_t)(unsigned long)doc["deadlineMs"] : 0;
+  gameTimeMs = doc.hasOwnProperty("gameTimeMs") ? (int)doc["gameTimeMs"] : 2000;
   actionDone = false;
   actionTimeMsLocal = 0;
   roundStarted = false;
@@ -226,13 +229,12 @@ void startRoundNow() {
 }
 
 void handleWsMessage(const String& payload) {
-  StaticJsonDocument<512> doc;
-  DeserializationError err = deserializeJson(doc, payload);
-  if (err) return;
+  JSONVar doc = JSON.parse(payload);
+  if (JSON.typeof(doc) == "undefined") return;
 
-  const char* type = doc["type"] | ""; // default to empty string if missing "type"
+  const char* type = doc.hasOwnProperty("type") ? (const char*)doc["type"] : "";
   if (!strcmp(type, "sync")) {
-    int64_t serverTime = doc["serverTimeMs"] | 0;
+    int64_t serverTime = doc.hasOwnProperty("serverTimeMs") ? (int64_t)(unsigned long)doc["serverTimeMs"] : 0;
     updateServerOffset(serverTime);
   } else if (!strcmp(type, "round")) {
     handleRoundMessage(doc);
@@ -249,13 +251,13 @@ void handleWsMessage(const String& payload) {
 void wsEvent(WStype_t type, uint8_t* payload, size_t len) {
   switch (type) {
     case WStype_CONNECTED:
-      digitalWrite(PIN_LED_BLUE, HIGH);
+      // digitalWrite(PIN_LED_BLUE, HIGH);
       sendHello();
       /// @todo wait for ack from server?
       state = State::REGISTERED;
       break;
     case WStype_DISCONNECTED:
-      digitalWrite(PIN_LED_BLUE, LOW);
+      // digitalWrite(PIN_LED_BLUE, LOW);
       // Clean up any active round timer
       stopRoundTimer();
       roundStarted = false;
@@ -270,6 +272,10 @@ void wsEvent(WStype_t type, uint8_t* payload, size_t len) {
 
 // -------- Setup / Loop --------
 void connectWiFi() {
+  // WiFi Status LED (HIGH = Connected)
+  pinMode(WIFI_STATUS_LED, OUTPUT);
+  digitalWrite(WIFI_STATUS_LED, LOW);
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.print("WiFi connecting");
@@ -280,19 +286,22 @@ void connectWiFi() {
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println(" WiFi connected");
+    digitalWrite(WIFI_STATUS_LED, HIGH); // solid ON = WiFi connected
   } else {
     Serial.println(" WiFi connection timeout");
   }
 }
 
 void setup() {
+  // Setup Serial
   Serial.begin(115200);
 
-  pinMode(PIN_LED_GREEN, OUTPUT);
-  pinMode(PIN_LED_BLUE, OUTPUT);
-  pinMode(PIN_BUTTON, INPUT_PULLUP);
-  digitalWrite(PIN_LED_GREEN, HIGH); // power on
-  digitalWrite(PIN_LED_BLUE, LOW);
+  // Set pin modes
+  // pinMode(PIN_LED_GREEN, OUTPUT);
+  // pinMode(PIN_LED_BLUE, OUTPUT);
+  // pinMode(PIN_BUTTON, INPUT_PULLUP);
+  // digitalWrite(PIN_LED_GREEN, HIGH); // power on
+  // digitalWrite(PIN_LED_BLUE, LOW);
 
   // Load block ID form non-volatile storage (NVS) or generate new
   prefs.begin("block");
