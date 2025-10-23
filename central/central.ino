@@ -29,11 +29,18 @@ const uint8_t AP_CHANNEL = 6;
 const uint8_t AP_MAX_CONNECTIONS = 8;
 
 // Timing constants (milliseconds)
-const uint32_t SYNC_INTERVAL_MS = 1000;           // Time sync broadcast interval
-const uint32_t PRUNE_INTERVAL_MS = 2000;          // Player connection check interval
-const uint32_t PLAYER_TIMEOUT_MS = 5000;          // Player disconnect timeout
-const uint32_t ROUND_DELAY_MS = 800;              // Delay between rounds
-const uint32_t DEADLINE_GRACE_MS = 20;            // Grace period after round deadline
+const uint32_t SYNC_INTERVAL_MS = 1000;  // Time sync broadcast interval
+const uint32_t PRUNE_INTERVAL_MS = 2000; // Player connection check interval
+const uint32_t PLAYER_TIMEOUT_MS = 5000; // Player disconnect timeout
+const uint32_t ROUND_DELAY_MS = 800;     // Delay between rounds
+const uint32_t DEADLINE_GRACE_MS = 20;   // Grace period after round deadline
+
+// Other constants
+const uint16_t HTTP_STATUS_OK = 200;
+const uint16_t HTTP_STATUS_NOT_FOUND = 404;
+const uint32_t BAUD_RATE = 115200; // Serial communication baud rate
+const uint32_t SERIAL_INIT_DELAY_MS = 100; // Allow serial to initialize
+const uint32_t STATUS_LIGHT_DELAY_MS = 100; // Default delay for status LED blink
 
 // ======================== GLOBAL INSTANCES ========================
 
@@ -262,12 +269,12 @@ void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventTyp
 void setupHttp() {  
   // Serve main web interface
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-    request->send_P(200, "text/html", INDEX_HTML);
+    request->send_P(HTTP_STATUS_OK, "text/html", INDEX_HTML);
   });
-  
+
   // Add basic error handling
   server.onNotFound([](AsyncWebServerRequest* request) {
-    request->send(404, "text/plain", "Not Found");
+    request->send(HTTP_STATUS_NOT_FOUND, "text/plain", "Not Found");
   });
   
   // Configure WebSocket
@@ -358,8 +365,8 @@ void setup() {
   digitalWrite(WIFI_STATUS_LED, LOW);
 
   // Initialize serial communication
-  Serial.begin(115200);
-  delay(100); // Allow serial to initialize
+  Serial.begin(BAUD_RATE);
+  delay(SERIAL_INIT_DELAY_MS); // Allow serial to initialize
 
   // Initialize game instance
   game = new Game(&ws);
@@ -367,9 +374,9 @@ void setup() {
     Serial.println("FATAL ERROR: Failed to create game instance");
     while (true) {
       digitalWrite(WIFI_STATUS_LED, HIGH);
-      delay(200);
+      delay(STATUS_LIGHT_DELAY_MS);
       digitalWrite(WIFI_STATUS_LED, LOW);
-      delay(200);
+      delay(STATUS_LIGHT_DELAY_MS);
     }
   }
 
@@ -377,9 +384,9 @@ void setup() {
   if (!setupWiFiAP()) {
     while (true) {
       digitalWrite(WIFI_STATUS_LED, HIGH);
-      delay(100);
+      delay(STATUS_LIGHT_DELAY_MS);
       digitalWrite(WIFI_STATUS_LED, LOW);
-      delay(100);
+      delay(STATUS_LIGHT_DELAY_MS);
     }
   }
 
