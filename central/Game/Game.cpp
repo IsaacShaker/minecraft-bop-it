@@ -149,7 +149,7 @@ void Game::endRound() {
 }
 
 void Game::markRoundStartAndDeadline() {
-  setRoundStartMs(millis() + 500);
+  setRoundStartMs(millis() + 500); // prepare and send command 500ms before start (to account for transmission delay)
   setDeadlineMs(m_round_start_ms + m_current_ms_window);
 }
 
@@ -161,7 +161,7 @@ String Game::randomCmd() {
 // Admin actions
 void Game::startGame(int round0Ms, int decayMs, int minMs) {
   if (m_phase != Phase::LOBBY) return; // Can only start from lobby
-  
+
   setPhase(Phase::RUNNING);
   setRound(0);
   setRound0Ms(round0Ms);
