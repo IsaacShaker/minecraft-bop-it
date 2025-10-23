@@ -37,6 +37,8 @@ Go to **Tools** → **Manage Libraries** and install:
 - **ESPAsyncWebServer** by ESP32Async
 - **WebSockets** by Markus Sattler
 - **Arduino_JSON** by Arduino
+- **Adafruit PN532** by Adafruit
+- **Adafruit MPU6050** by Electronic Cats
 
 ### 4. Flash the Firmware
 
