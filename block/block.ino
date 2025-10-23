@@ -6,23 +6,36 @@
 #include <SPI.h>
 #include <Preferences.h>
 
+#include <Adafruit_PN532.h>
+#include <MPU6050.h>
+#include <math.h>
+
 // WIFI Status LED
 #ifndef WIFI_STATUS_LED
 #define WIFI_STATUS_LED 2
 #endif
 
 // -------- Pins (assign to right pins when we prototype) --------
-constexpr int PIN_LED_GREEN       = 1;  // Power indicator
-constexpr int PIN_LED_BLUE        = 2;  // Synced indicator
-constexpr int PIN_BUTTON          = 3;  // "Mine it" button
-constexpr int PIN_COMMAND_SPEAKER = 4;  // command speaker pin
+constexpr int PIN_LED_GREEN       = 5;  // Power indicator
+constexpr int PIN_LED_BLUE        = 2;  // Synced indicator //TBD
+constexpr int PIN_BUTTON          = 14;  // "Mine it" button
+constexpr int PIN_COMMAND_SPEAKER = 4;  // command speaker pin    //TBD
+//TODO: ADD red led 
 
-// RFID pins
+// RFID pins //do not need this setup
 constexpr int PIN_RFID_SDA  = 5;
 constexpr int PIN_RFID_SCK  = 6;
 constexpr int PIN_RFID_MOSI = 7;
 constexpr int PIN_RFID_MISO = 8;
 constexpr int PIN_RFID_RST  = 9;
+
+//SHAKER SENSOR SETUP
+MPU6050 mpu;
+
+//RFID SETUP
+#define PN532_IRQ   (2)  //IRQ pin
+#define PN532_RESET (3)  //RESET pin
+Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET, &Wire1);
 
 // -------- Network config --------
 const char* WIFI_SSID = "BlockParty";
@@ -83,8 +96,17 @@ void stopRoundTimer() {
 // -------- Sensors --------
 void sensorsInit() {
   Wire.begin();
+  // pinMode(buttonPin, INPUT_PULLUP);
+  // pinMode(greenPin, OUTPUT);
+  
   /// @todo accelerometer init
+  Wire.begin(21, 22);     // MPU6050 on I2C0
+  mpu.initialize();   //shaker sensor setup
+  
   /// @todo RFID init
+  Wire1.begin(18, 19);   // PN532 on I2C1  
+  nfc.begin();    //rfid reader setup
+  nfc.SAMConfig();   //rfid reader setup
 }
 
 bool detectMine() {
@@ -123,11 +145,34 @@ bool detectMine() {
 
 bool detectShake() {
   /// @todo: read accelerometer
+  int16_t ax, ay, az;
+  mpu.getAcceleration(&ax, &ay, &az);
+  float accelX = ax / 16384.0;
+  float accelY = ay / 16384.0;
+  float accelZ = az / 16384.0;
+  float magnitude = sqrt(accelX * accelX + accelY * accelY + accelZ * accelZ);\
+
+  // Better shake detection: deviation from 1g
+  float deviation = fabs(magnitude - 1.0);
+  if (deviation > 0.4) {
+    //do something
+    delay(500); // Debounce shake detection
+  }
+  
   return false;
 }
 
 bool detectPlace() {
   /// @todo: read RFID
+  uint8_t uid[7];
+  uint8_t uidLength;
+  // The 4th parameter is timeout in milliseconds - CRITICAL for non-blocking behavior
+  uint8_t success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 50);
+  
+ //if (sucess)  
+// {  do something
+//     delay(1000); // Prevent repeated reads of same card *THIS IS NEEDED
+//    }
   return false;
 }
 
