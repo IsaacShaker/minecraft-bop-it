@@ -4,7 +4,12 @@
 #include <Arduino_JSON.h>
 #include <LittleFS.h>
 #include <vector>
-#include "web_interface.h"
+#include "Web/web_interface.h"
+#include "Game/Game.h"
+#include "Player/Player.h"
+// Include implementations for Arduino IDE (since .cpp files in subdirs aren't auto-compiled)
+#include "Game/Game.cpp"
+#include "Player/Player.cpp"
 
 // WIFI Status LED
 #ifndef WIFI_STATUS_LED
@@ -19,263 +24,62 @@ const char* AP_PASS = "craft123";
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
-// Web interface HTML is now in web_interface.h
-// Run ./generate_web_header.sh to regenerate from data/index.html
-
-// -------- Game --------
-enum class Phase { LOBBY, RUNNING, WAITING_NEXT_ROUND, PAUSED, DONE };
-
-enum class COMMAND { SHAKE, MINE, PLACE };
-
-struct Player {
-  String blockId;
-  String name;
-  bool   connected = false;
-  bool   inGame = false;
-  int    score = 0;
-  uint32_t lastSeenMs = 0;
-
-  // Round temp:
-  bool   reported = false;
-  bool   success  = false;
-};
-
-struct GameState {
-  Phase phase = Phase::LOBBY;
-  int   round = -1;
-  String currentCmd = "";
-  int currentMsWindow = 2500;
-  int round0Ms = 2500; // initial time window, player has this much time to respond
-  int decayMs  = 150;  // game speeds up by this much each round
-  int minMs    = 800;
-  uint64_t roundStartMs = 0; // server absolute
-  uint64_t deadlineMs   = 0; // server absolute
-  bool pauseQueued = false; // flag to pause after current round ends
-} gs;
-
-// -------- Storage --------
-/// @todo consider using a map instead of vector if we can in ESP32
-std::vector<Player> players;
-
-struct ClientMeta {
-  uint32_t id;
-  String role;    // "block" | "web"
-  String blockId; // set if role == "block"
-};
-
-std::vector<ClientMeta> clients;
-
-Player* getPlayer(const String& blockId) {
-  for (auto &p : players) if (p.blockId == blockId) return &p;
-  return nullptr;
-}
-
-Player& addPlayer(const String& blockId) {
-  Player* p = getPlayer(blockId);
-  if (p) return *p;
-  Player np; np.blockId = blockId; np.name = blockId;
-  players.push_back(np);
-  return players.back();
-}
-
-ClientMeta* getClient(uint32_t id) {
-  for (auto &c : clients) if (c.id == id) return &c;
-  return nullptr;
-}
-
-void removeClient(uint32_t id) {
-  clients.erase(std::remove_if(clients.begin(), clients.end(),
-              [&](const ClientMeta& c){return c.id==id;}), clients.end());
-}
-
-// -------- Helpers --------
-String phaseToStr(Phase ph) {
-  switch (ph) {
-    case Phase::LOBBY: return "LOBBY";
-    case Phase::RUNNING: return "RUNNING";
-    case Phase::WAITING_NEXT_ROUND: return "WAITING_NEXT_ROUND";
-    case Phase::PAUSED: return "PAUSED";
-    case Phase::DONE: return "DONE";
-		default: return "LOBBY";
-  }
-}
-
-String commandToStr(COMMAND cmd) {
-	switch (cmd) {
-		case COMMAND::SHAKE: return "SHAKE";
-		case COMMAND::MINE: return "MINE";
-		case COMMAND::PLACE: return "PLACE";
-		default: return "SHAKE";
-	}
-}
-
-int aliveCount() {
-  int n=0;
-  for (auto &p: players) if (p.inGame) ++n;
-  return n;
-}
-
-String buildGameStateMessage() {
-  JSONVar doc;
-  doc["type"] = "state";
-  doc["phase"] = phaseToStr(gs.phase);
-  doc["round"] = gs.round;
-
-  JSONVar arr;
-  int i = 0;
-  for (auto &p : players) {
-    JSONVar playerObj;
-    playerObj["blockId"] = p.blockId;
-    playerObj["name"]    = p.name;
-    playerObj["inGame"]  = p.inGame;
-    playerObj["score"]   = p.score;
-    playerObj["connected"] = p.connected;
-    arr[i++] = playerObj;
-  }
-  doc["players"] = arr;
-  return JSON.stringify(doc);
-}
-
-void broadcastStateToWeb() {
-  String message = buildGameStateMessage();
-  // Send to all web clients
-  for (const auto& c : clients) {
-    if (c.role == "web") {
-      ws.text(c.id, message);
-    }
-  }
-}
-
-void broadcastStateToWeb(uint32_t clientId) {
-  // Check if clientId exists in clients vector
-  auto it = std::find_if(clients.begin(), clients.end(),
-                         [clientId](const ClientMeta& c){ return c.id == clientId; });
-  if (it == clients.end()) return; // client not found
-
-  String message = buildGameStateMessage();
-  ws.text(clientId, message);
-}
-
-/// @brief Send new round info only to blocks that are in the game
-void broadcastRoundToBlocks() {
-  JSONVar doc;
-  doc["type"] = "round";
-  doc["round"] = gs.round;
-  doc["cmd"] = gs.currentCmd;
-  doc["roundStartMs"] = (unsigned long)gs.roundStartMs;    // When round officially starts
-  doc["gameTimeMs"] = gs.currentMsWindow;   // How long players have to respond
-  doc["deadlineMs"] = (unsigned long)gs.deadlineMs;        // When server will end round
-  
-	String out = JSON.stringify(doc);
-	for (const auto& c : clients) {
-		if (c.role == "block" && c.blockId.length()) {
-			Player *p = getPlayer(c.blockId);
-			if (p && p->inGame) {
-				ws.text(c.id, out);
-			}
-		}
-	}
-}
-
-void markRoundStartAndDeadline() {
-  // Give 500ms buffer for message delivery and processing
-  gs.roundStartMs = millis() + 500;
-  gs.deadlineMs   = gs.roundStartMs + gs.currentMsWindow;
-}
-
-String randomCmd() {
-  uint32_t r = (uint32_t)esp_random() % 3;
-  return String(commandToStr((COMMAND)r));
-}
-
-// -------- Round lifecycle --------
-void resetRoundFlags() {
-  for (auto &p : players) { p.reported = false; p.success = false; }
-}
-
-void nextRound() {
-  if (aliveCount() <= 1) {
-    gs.phase = Phase::DONE;
-    broadcastStateToWeb();
-    return;
-  }
-
-  gs.round += 1;
-  gs.currentCmd = randomCmd();
-  resetRoundFlags();
-  markRoundStartAndDeadline();
-  broadcastRoundToBlocks();
-  broadcastStateToWeb();
-}
-
-void endRound() {
-  // Eliminate those who did not succeed
-  for (auto &p : players) {
-    if (!p.inGame) continue;
-    if (!p.success) p.inGame = false;
-  }
-  // Shrink window
-  gs.currentMsWindow = max(gs.minMs, gs.currentMsWindow - gs.decayMs);
-  
-  broadcastStateToWeb();
-}
+// -------- Game Instance --------
+Game* game = nullptr;
 
 // -------- WebSocket events --------
 void handleBlockHello(AsyncWebSocketClient* client, JSONVar& doc) {
   String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
-  auto *meta = getClient(client->id());
+  auto *meta = game->getClient(client->id());
   if (!meta) return;
   meta->role = "block";
   meta->blockId = blockId;
 
-  Player &p = addPlayer(blockId);
-  p.connected = true;
-  p.lastSeenMs = millis();
-  p.name = p.name.length() ? p.name : blockId; // default
-
-  broadcastStateToWeb();
+  Player &p = game->addPlayer(blockId);
+  p.setConnected(true);
+  p.setLastSeenMs(millis());
 }
 
 void handleWebHello(AsyncWebSocketClient* client, JSONVar& doc) {
-  auto *meta = getClient(client->id());
+  auto *meta = game->getClient(client->id());
   if (!meta) return;
   meta->role = "web";
   meta->blockId = ""; // web clients don't have block IDs
   
   Serial.printf("Web client connected: %u\n", client->id());
   // Send current state to the newly connected web client
-  broadcastStateToWeb(client->id());
+  /// @todo should have a method that sets the role of a client that automatically broadcasts?
+  game->broadcastStateToWeb(client->id());
 }
 
 void handleBlockStatus(JSONVar& doc) {
   String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
-  Player *p = getPlayer(blockId);
+  Player *p = game->getPlayer(blockId);
   if (!p) return;
-  p->connected = true;
-  p->lastSeenMs = millis();
+  p->setConnected(true);
+  p->setLastSeenMs(millis());
 }
 
 void handleBlockResult(JSONVar& doc) {
-  if (gs.phase != Phase::RUNNING && gs.phase != Phase::WAITING_NEXT_ROUND) return;
+  if (game->getPhase() != Phase::RUNNING && game->getPhase() != Phase::WAITING_NEXT_ROUND) return;
 
   int round = doc.hasOwnProperty("round") ? (int)doc["round"] : -999;
-  if (round != gs.round) return;
+  if (round != game->getRound()) return;
   String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
-  Player *p = getPlayer(blockId);
-  if (!p || !p->inGame) return;
+  Player *p = game->getPlayer(blockId);
+  if (!p || !p->isInGame()) return;
 
   bool actionDone = doc.hasOwnProperty("actionDone") ? (bool)doc["actionDone"] : false;
-  p->reported = true;
-  p->success = actionDone;
+  p->setReported(true);
+  p->setSuccess(actionDone);
   if (actionDone) {
-    p->score += 1;
+    p->incrementScore();
   }
-  broadcastStateToWeb();
 }
 
 void handleAdmin(AsyncWebSocketClient* client, JSONVar& doc) {
   // Verify that the client is authenticated as a web client
-  auto *meta = getClient(client->id());
+  auto *meta = game->getClient(client->id());
   if (!meta || meta->role != "web") {
     Serial.printf("Unauthorized admin attempt from client %u (role: %s)\n", 
                   client->id(), meta ? meta->role.c_str() : "unknown");
@@ -284,40 +88,20 @@ void handleAdmin(AsyncWebSocketClient* client, JSONVar& doc) {
   
   String action = doc.hasOwnProperty("action") ? (const char*)doc["action"] : "";
   if (action == "start") {
-    gs.phase = Phase::RUNNING;
-    gs.round = -1;
-    gs.round0Ms = doc.hasOwnProperty("round0Ms") ? (int)doc["round0Ms"] : 2500;
-    gs.decayMs  = doc.hasOwnProperty("decayMs") ? (int)doc["decayMs"] : 150;
-    gs.minMs    = doc.hasOwnProperty("minMs") ? (int)doc["minMs"] : 800;
-    gs.currentMsWindow = gs.round0Ms;
-
-    // mark all connected as inGame
-    for (auto &p : players) { p.inGame = p.connected; p.score = 0; }
-
-    nextRound();
+    int round0Ms = doc.hasOwnProperty("round0Ms") ? (int)doc["round0Ms"] : 2500;
+    int decayMs  = doc.hasOwnProperty("decayMs") ? (int)doc["decayMs"] : 150;
+    int minMs    = doc.hasOwnProperty("minMs") ? (int)doc["minMs"] : 800;
+    game->startGame(round0Ms, decayMs, minMs);
   } else if (action == "pause") {
-    // Queue the pausing until this round is over
-    gs.pauseQueued = true;
-    broadcastStateToWeb();
+    game->pauseGame();
   } else if (action == "resume") {
-    gs.pauseQueued = false; // Clear any queued pause
-    if (gs.phase == Phase::PAUSED) {
-      gs.phase = Phase::WAITING_NEXT_ROUND;
-      broadcastStateToWeb();
-    }
+    game->resumeGame();
   } else if (action == "reset") {
-    gs.phase = Phase::LOBBY;
-    gs.round = -1;
-    gs.currentMsWindow = gs.round0Ms;
-    gs.pauseQueued = false;
-    for (auto &p : players) { p.inGame = false; p.score = 0; p.reported=false; p.success=false; }
-    broadcastStateToWeb();
+    game->resetGame();
   } else if (action == "rename") {
-    if (gs.phase != Phase::LOBBY) return; // only allow rename in lobby
     String blockId = doc.hasOwnProperty("blockId") ? (const char*)doc["blockId"] : "";
-    String nm  = doc.hasOwnProperty("name") ? (const char*)doc["name"] : "";
-    Player *p = getPlayer(blockId);
-    if (p && nm.length()) { p->name = nm; broadcastStateToWeb(); }
+    String name = doc.hasOwnProperty("name") ? (const char*)doc["name"] : "";
+    game->renamePlayer(blockId, name);
   }
 }
 
@@ -328,17 +112,16 @@ void onWsEvent(AsyncWebSocket       * server,
                uint8_t *              data,
                size_t                 len) {
   if (type == WS_EVT_CONNECT) {
-    clients.push_back({client->id(), "", ""});
+    game->addClient(client->id());
     // Send current state only to the newly connected client
-    broadcastStateToWeb(client->id());
+    game->broadcastStateToWeb(client->id());
   } else if (type == WS_EVT_DISCONNECT) {
-    auto *meta = getClient(client->id());
+    auto *meta = game->getClient(client->id());
     if (meta && meta->role == "block" && meta->blockId.length()) {
-      Player *p = getPlayer(meta->blockId);
-      if (p) p->connected = false;
-      broadcastStateToWeb();
+      Player *p = game->getPlayer(meta->blockId);
+      if (p) p->setConnected(false);
     }
-    removeClient(client->id());
+    game->removeClient(client->id());
   } else if (type == WS_EVT_DATA) {
     // Parse JSON
     String jsonString = String((char*)data).substring(0, len);
@@ -357,7 +140,7 @@ void onWsEvent(AsyncWebSocket       * server,
     } else if (!strcmp(t, "admin")) {
       handleAdmin(client, doc);
     } else {
-      broadcastStateToWeb();
+      game->broadcastStateToWeb();
     }
   }
 }
@@ -390,6 +173,9 @@ void setup() {
   //Setup Serial
   Serial.begin(115200);
 
+  // Initialize game instance
+  game = new Game(&ws);
+
   // Settup WiFi AP
   WiFi.mode(WIFI_AP);
   bool ok = WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 8);
@@ -415,35 +201,33 @@ void loop() {
   // 2) prune disconnected players if stale
   if (millis() - lastPruneMs > 2000) {
     lastPruneMs = millis();
-    for (auto &p : players) {
-      if (p.connected && (millis() - p.lastSeenMs > 5000)) {
-        p.connected = false;
+    for (const auto& player : game->getPlayers()) {
+      if (player->isConnected() && (millis() - player->getLastSeenMs() > 5000)) {
+        player->setConnected(false);
       }
     }
   }
 
   // 3) round timing gates (end & next)
-  if (gs.phase == Phase::RUNNING && millis() - lastRoundCheckMs > 50) {
+  if (game->getPhase() == Phase::RUNNING && millis() - lastRoundCheckMs > 50) {
     lastRoundCheckMs = millis();
-    if (millis() > gs.deadlineMs + 20) {
-      endRound();
+    if (millis() > game->getDeadlineMs() + 20) {
+      game->endRound();
       // Schedule next round start time (non-blocking approach)
-      gs.roundStartMs = millis() + 800;  // 800ms delay before next round
-      gs.phase = Phase::WAITING_NEXT_ROUND;  // Temporarily pause to wait for next round
-      broadcastStateToWeb();
+      game->setRoundStartMs(millis() + 800);  // 800ms delay before next round
+      game->setPhase(Phase::WAITING_NEXT_ROUND);  // Temporarily pause to wait for next round
     }
   }
 
   // 4) Handle scheduled next round start
-  if (gs.phase == Phase::WAITING_NEXT_ROUND && millis() >= gs.roundStartMs) {
-    if (gs.pauseQueued) {
-        gs.pauseQueued = false;
-        gs.phase = Phase::PAUSED;
-        broadcastStateToWeb();
+  if (game->getPhase() == Phase::WAITING_NEXT_ROUND && millis() >= game->getRoundStartMs()) {
+    if (game->isPauseQueued()) {
+        game->setPauseQueued(false);
+        game->setPhase(Phase::PAUSED);
     }
     else {
-      gs.phase = Phase::RUNNING;
-      nextRound();
+      game->setPhase(Phase::RUNNING);
+      game->nextRound();
     }
   }
 

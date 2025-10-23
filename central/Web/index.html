@@ -1,13 +1,3 @@
-// Auto-generated header file - DO NOT EDIT MANUALLY
-// Generated from data/index.html
-// Run ./generate_web_header.sh to regenerate
-
-#ifndef WEB_INTERFACE_H
-#define WEB_INTERFACE_H
-
-#include <Arduino.h>
-
-static const char INDEX_HTML[] PROGMEM = R"HTML(
 <!doctype html>
 <html>
 <head>
@@ -46,10 +36,10 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <div class="column-container" style="margin:12px 0;">
     <div class="row-container">
       <h3>Admin Controls:</h3>
-      <button onclick="startGame()">Start</button>
-      <button onclick="pauseGame()">Pause</button>
-      <button onclick="resumeGame()">Resume</button>
-      <button onclick="resetGame()">Reset</button>
+      <button id="startBtn" onclick="startGame()">Start</button>
+      <button id="pauseBtn" onclick="pauseGame()">Pause</button>
+      <button id="resumeBtn" onclick="resumeGame()">Resume</button>
+      <button id="resetBtn" onclick="resetGame()">Reset</button>
     </div>
     <div class="row-container">
       <h3>Game Settings:</h3>
@@ -112,7 +102,14 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 
     function render() {
       document.getElementById('phaseRound').textContent = `Phase: ${state.phase}`;
-      document.getElementById('Round').textContent = `Round: ${state.round >= 0 ? state.round : '-'}`;
+      document.getElementById('Round').textContent = `Round: ${state.round > 0 ? state.round : '-'}`;
+
+      // Enable/disable controls based on game phase
+      const isLobby = state.phase === 'LOBBY';
+      document.getElementById('startBtn').disabled = !isLobby;
+      document.getElementById('round0').disabled = !isLobby;
+      document.getElementById('decay').disabled = !isLobby;
+      document.getElementById('minms').disabled = !isLobby;
 
       const tb = document.querySelector('#table tbody');
       tb.innerHTML = '';
@@ -140,6 +137,3 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   </script>
 </body>
 </html>
-)HTML";
-
-#endif // WEB_INTERFACE_H

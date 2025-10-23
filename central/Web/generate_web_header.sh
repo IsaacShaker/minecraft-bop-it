@@ -4,7 +4,7 @@
 # Usage: ./generate_web_header.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HTML_FILE="$SCRIPT_DIR/data/index.html"
+HTML_FILE="$SCRIPT_DIR/index.html"
 HEADER_FILE="$SCRIPT_DIR/web_interface.h"
 
 # Check if HTML file exists
