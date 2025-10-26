@@ -23,10 +23,10 @@ private:
   Phase m_phase;
   int m_round;
   String m_current_cmd;
-  int m_current_ms_window;
-  int m_round0_ms;
-  int m_decay_ms;
-  int m_min_ms;
+  uint32_t m_current_ms_window;
+  uint32_t m_round0_ms;
+  uint32_t m_decay_ms;
+  uint32_t m_min_ms;
   uint64_t m_round_start_ms;
   uint64_t m_deadline_ms;
   bool m_pause_queued;
@@ -54,17 +54,17 @@ public:
   void setCurrentCmd(const String& cmd);
   
   // Timing
-  int getCurrentMsWindow() const { return m_current_ms_window; }
-  void setCurrentMsWindow(int window);
+  uint32_t getCurrentMsWindow() const { return m_current_ms_window; }
+  void setCurrentMsWindow(uint32_t window);
 
-  int getRound0Ms() const { return m_round0_ms; }
-  void setRound0Ms(int ms);
+  uint32_t getRound0Ms() const { return m_round0_ms; }
+  void setRound0Ms(uint32_t ms);
 
-  int getDecayMs() const { return m_decay_ms; }
-  void setDecayMs(int ms);
+  uint32_t getDecayMs() const { return m_decay_ms; }
+  void setDecayMs(uint32_t ms);
 
-  int getMinMs() const { return m_min_ms; }
-  void setMinMs(int ms);
+  uint32_t getMinMs() const { return m_min_ms; }
+  void setMinMs(uint32_t ms);
 
   uint64_t getRoundStartMs() const { return m_round_start_ms; }
   void setRoundStartMs(uint64_t ms);
@@ -95,7 +95,7 @@ public:
   String randomCmd();
   
   // Admin actions
-  void startGame(int round0Ms = 2500, int decayMs = 150, int minMs = 800);
+  void startGame(uint32_t round0Ms = 2500, uint32_t decayMs = 150, uint32_t minMs = 800);
   void pauseGame();
   void resumeGame();
   void resetGame();

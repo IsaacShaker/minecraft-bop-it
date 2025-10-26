@@ -30,25 +30,25 @@ void Game::setCurrentCmd(const String& cmd) {
 }
 
 // Timing setters
-void Game::setCurrentMsWindow(int window) {
+void Game::setCurrentMsWindow(uint32_t window) {
   if (m_current_ms_window != window) {
     m_current_ms_window = window;
   }
 }
 
-void Game::setRound0Ms(int ms) {
+void Game::setRound0Ms(uint32_t ms) {
   if (m_round0_ms != ms) {
     m_round0_ms = ms;
   }
 }
 
-void Game::setDecayMs(int ms) {
+void Game::setDecayMs(uint32_t ms) {
   if (m_decay_ms != ms) {
     m_decay_ms = ms;
   }
 }
 
-void Game::setMinMs(int ms) {
+void Game::setMinMs(uint32_t ms) {
   if (m_min_ms != ms) {
     m_min_ms = ms;
   }
@@ -144,8 +144,10 @@ void Game::endRound() {
     }
   }
   
-  // Shrink window
-  setCurrentMsWindow(max(m_min_ms, m_current_ms_window - m_decay_ms));
+  // Shrink window - ensure it doesn't go below minimum
+  uint32_t newWindow = (m_current_ms_window > m_decay_ms) ? 
+                       m_current_ms_window - m_decay_ms : m_min_ms;
+  setCurrentMsWindow(max(m_min_ms, newWindow));
 }
 
 void Game::markRoundStartAndDeadline() {
@@ -159,7 +161,7 @@ String Game::randomCmd() {
 }
 
 // Admin actions
-void Game::startGame(int round0Ms, int decayMs, int minMs) {
+void Game::startGame(uint32_t round0Ms, uint32_t decayMs, uint32_t minMs) {
   if (m_phase != Phase::LOBBY) return; // Can only start from lobby
 
   setPhase(Phase::RUNNING);

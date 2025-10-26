@@ -36,10 +36,10 @@ const uint32_t ROUND_DELAY_MS = 800;     // Delay between rounds
 const uint32_t DEADLINE_GRACE_MS = 20;   // Grace period after round deadline
 
 // Other constants
-const uint16_t HTTP_STATUS_OK = 200;
-const uint16_t HTTP_STATUS_NOT_FOUND = 404;
-const uint32_t BAUD_RATE = 115200; // Serial communication baud rate
-const uint32_t SERIAL_INIT_DELAY_MS = 100; // Allow serial to initialize
+const uint16_t HTTP_STATUS_OK = 200;        // HTTP status code
+const uint16_t HTTP_STATUS_NOT_FOUND = 404; // HTTP status code
+const uint32_t BAUD_RATE = 115200;          // Serial communication baud rate
+const uint32_t SERIAL_INIT_DELAY_MS = 100;  // Allow serial to initialize
 const uint32_t STATUS_LIGHT_DELAY_MS = 100; // Default delay for status LED blink
 
 // ======================== GLOBAL INSTANCES ========================
@@ -159,9 +159,9 @@ void handleAdmin(AsyncWebSocketClient* client, JSONVar& doc) {
 
   // Process admin commands
   if (action == "start") {
-    int round0Ms = doc.hasOwnProperty("round0Ms") ? (int)doc["round0Ms"] : 2500;
-    int decayMs = doc.hasOwnProperty("decayMs") ? (int)doc["decayMs"] : 150;
-    int minMs = doc.hasOwnProperty("minMs") ? (int)doc["minMs"] : 800;
+    uint32_t round0Ms = doc.hasOwnProperty("round0Ms") ? (uint32_t)(int)doc["round0Ms"] : 2500;
+    uint32_t decayMs = doc.hasOwnProperty("decayMs") ? (uint32_t)(int)doc["decayMs"] : 150;
+    uint32_t minMs = doc.hasOwnProperty("minMs") ? (uint32_t)(int)doc["minMs"] : 800;
     
     game->startGame(round0Ms, decayMs, minMs);
     
