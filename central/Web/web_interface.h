@@ -119,7 +119,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <h3 id="Command"></h3>
 
   <table id="table">
-    <thead><tr><th>Player</th><th>Block</th><th>In Game</th><th>Score</th><th>Conn</th><th>Rename</th></tr></thead>
+    <thead><tr><th>Player</th><th>Block</th><th>In Game</th><th>Score</th><th>Conn</th><th>Reported</th><th>Success</th><th>Rename</th></tr></thead>
     <tbody></tbody>
   </table>
 
@@ -257,6 +257,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         const tr = document.createElement('tr');
         const inBadge = `<span class="badge ${p.inGame?'ok':'out'}">${p.inGame?'IN':'OUT'}</span>`;
         const cBadge  = `<span class="badge ${p.connected?'ok':'disc'}">${p.connected?'ON':'OFF'}</span>`;
+        const reportedBadge = `<span class="badge ${p.reported?'ok':'out'}">${p.reported?'YES':'NO'}</span>`;
+        const successBadge = `<span class="badge ${p.successful?'ok':'out'}">${p.successful?'YES':'NO'}</span>`;
     
         const disabledAttr = isLobby ? '' : 'disabled';
         tr.innerHTML = `
@@ -265,6 +267,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           <td>${inBadge}</td>
           <td>${p.score}</td>
           <td>${cBadge}</td>
+          <td>${reportedBadge}</td>
+          <td>${successBadge}</td>
           <td>
             <input size="10" value="${p.name}" id="name-${p.blockId}" ${disabledAttr}>
             <button onclick="renameBlock('${p.blockId}', document.getElementById('name-${p.blockId}').value)" ${disabledAttr}>Save</button>

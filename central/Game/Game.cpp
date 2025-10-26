@@ -278,6 +278,8 @@ String Game::buildGameStateMessage() {
     playerObj["inGame"] = p->isInGame();
     playerObj["score"] = p->getScore();
     playerObj["connected"] = p->isConnected();
+    playerObj["reported"] = p->hasReported();
+    playerObj["successful"] = p->wasSuccessful();
     arr[i++] = playerObj;
   }
   doc["players"] = arr;
