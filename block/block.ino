@@ -161,6 +161,7 @@ bool detectMine() {
       if (stableState == LOW && !buttonPressed) {
         buttonPressed = true;
         lastReading = reading;
+        Serial.println("Button detected");
         return true; // Button was just pressed
       }
       
@@ -189,6 +190,7 @@ bool detectShake() {
   if (deviation > 0.4) {
     //do something
     // delay(500); // Debounce shake detectio
+    Serial.println("Shake detected");
     return true;
   }
   
@@ -211,6 +213,7 @@ bool detectPlace() {
   
   if (success) {
     lastPlaceTime = millis();
+    Serial.println("RFID sticker detected");
     return true;
   }
   
