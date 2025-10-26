@@ -1,5 +1,5 @@
 // Auto-generated header file - DO NOT EDIT MANUALLY
-// Generated from data/index.html
+// Generated from Web/index.html
 // Run ./generate_web_header.sh to regenerate
 
 #ifndef WEB_INTERFACE_H
@@ -129,8 +129,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         const inBadge = `<span class="badge ${p.inGame?'ok':'out'}">${p.inGame?'IN':'OUT'}</span>`;
         const cBadge  = `<span class="badge ${p.connected?'ok':'disc'}">${p.connected?'ON':'OFF'}</span>`;
 
-        const canRename = state.phase === 'LOBBY';
-        const disabledAttr = canRename ? '' : 'disabled';
+        const disabledAttr = isLobby ? '' : 'disabled';
         tr.innerHTML = `
           <td>${p.name}</td>
           <td>${p.blockId}</td>
@@ -138,8 +137,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           <td>${p.score}</td>
           <td>${cBadge}</td>
           <td>
-            <input size="10" value="${p.name}" id="nm-${p.blockId}" ${disabledAttr}>
-            <button onclick="renameBlock('${p.blockId}', document.getElementById('nm-${p.blockId}').value)" ${disabledAttr}>Save</button>
+            <input size="10" value="${p.name}" id="name-${p.blockId}" ${disabledAttr}>
+            <button onclick="renameBlock('${p.blockId}', document.getElementById('name-${p.blockId}').value)" ${disabledAttr}>Save</button>
           </td>`;
         tb.appendChild(tr);
       }

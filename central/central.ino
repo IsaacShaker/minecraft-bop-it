@@ -5,7 +5,6 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <Arduino_JSON.h>
-#include <LittleFS.h>
 #include <vector>
 #include "Web/web_interface.h"
 #include "Game/Game.h"
@@ -246,8 +245,6 @@ void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventTyp
         handleBlockResult(doc);
       } else if (msgType == "admin") {
         handleAdmin(client, doc);
-      } else {
-        game->broadcastStateToWeb();
       }
       break;
     }
@@ -382,6 +379,7 @@ void setup() {
 
   // Setup WiFi Access Point
   if (!setupWiFiAP()) {
+    delete game;
     while (true) {
       digitalWrite(WIFI_STATUS_LED, HIGH);
       delay(STATUS_LIGHT_DELAY_MS);
