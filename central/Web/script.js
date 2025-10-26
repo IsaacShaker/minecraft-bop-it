@@ -56,7 +56,12 @@ function render() {
 
   // Enable/disable controls based on game phase
   const isLobby = state.phase === 'LOBBY';
+  const isDone = state.phase === 'DONE';
+  const canPauseResume = !isLobby && !isDone;
+  
   document.getElementById('startBtn').disabled = !isLobby;
+  document.getElementById('pauseBtn').disabled = !canPauseResume;
+  document.getElementById('resumeBtn').disabled = !canPauseResume;
   document.getElementById('round0').disabled = !isLobby;
   document.getElementById('decay').disabled = !isLobby;
   document.getElementById('minms').disabled = !isLobby;
