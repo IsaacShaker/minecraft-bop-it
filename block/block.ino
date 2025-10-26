@@ -188,7 +188,8 @@ bool detectShake() {
   float deviation = fabs(magnitude - 1.0);
   if (deviation > 0.4) {
     //do something
-    delay(500); // Debounce shake detection
+    // delay(500); // Debounce shake detectio
+    return true;
   }
   
   return false;
