@@ -128,9 +128,10 @@ void Game::nextRound() {
     return;
   }
 
-  setRound(m_round + 1);
   setCurrentCmd(randomCmd());
   resetRoundFlags();
+  
+  setRound(m_round + 1);
   markRoundStartAndDeadline();
   broadcastRoundToBlocks();
 }
