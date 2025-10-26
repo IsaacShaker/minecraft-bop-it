@@ -12,9 +12,11 @@ This directory contains the central server code for the Block Party multiplayer 
 - `Player/Player.h` / `Player/Player.cpp` - Player state management
 
 ### Web Interface
-- `Web/index.html` - Source HTML file for the web interface
-- `Web/generate_web_header.sh` - Script to generate web_interface.h from index.html
-- `Web/web_interface.h` - Auto-generated header containing the web interface HTML
+- `Web/index.html` - Source HTML structure for the web interface
+- `Web/styles.css` - CSS styling for the web interface
+- `Web/script.js` - JavaScript functionality for the web interface
+- `Web/generate_web_header.sh` - Script to generate web_interface.h from HTML, CSS, and JS files
+- `Web/web_interface.h` - Auto-generated header containing the complete web interface
 
 ### Game Class
 - Manages overall game state (phase, round, timing)
@@ -38,6 +40,8 @@ cd Web
 cd ..
 ```
 
+This combines the separate HTML, CSS, and JavaScript files into a single embedded header.
+
 ### Arduino IDE Compilation
 1. Open `central.ino` in Arduino IDE
 2. Make sure you have the required libraries installed:
@@ -54,9 +58,12 @@ The project is organized into subdirectories for better code organization:
 ## Development Workflow
 
 1. Edit game logic in `Game/Game.cpp` or player logic in `Player/Player.cpp`
-2. Edit the web interface in `Web/index.html`
+2. Edit the web interface:
+   - `Web/index.html` for HTML structure
+   - `Web/styles.css` for styling
+   - `Web/script.js` for JavaScript functionality
 3. Run `./Web/generate_web_header.sh` to generate the web header
-    - This will create `Web/web_interface.h` from `Web/index.html`.
+   - This combines all three files into `Web/web_interface.h` for embedding
 4. Open and compile `central.ino` in Arduino IDE
 
 ## Web Interface

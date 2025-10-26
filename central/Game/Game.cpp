@@ -1,7 +1,7 @@
 #include "Game.h"
 
 Game::Game(AsyncWebSocket* ws) 
-  : m_phase(Phase::LOBBY), m_round(0), m_current_cmd(""), m_current_ms_window(2500),
+  : m_phase(Phase::LOBBY), m_round(0), m_current_cmd(Command::SHAKE), m_current_ms_window(2500),
     m_round0_ms(2500), m_decay_ms(150), m_min_ms(800), m_round_start_ms(0), 
     m_deadline_ms(0), m_pause_queued(false), m_ws(ws) {
 }
@@ -22,7 +22,7 @@ void Game::setRound(int round) {
   }
 }
 
-void Game::setCurrentCmd(const String& cmd) {
+void Game::setCurrentCmd(Command cmd) {
   if (m_current_cmd != cmd) {
     m_current_cmd = cmd;
     broadcastStateToWeb();
@@ -30,25 +30,25 @@ void Game::setCurrentCmd(const String& cmd) {
 }
 
 // Timing setters
-void Game::setCurrentMsWindow(int window) {
+void Game::setCurrentMsWindow(uint32_t window) {
   if (m_current_ms_window != window) {
     m_current_ms_window = window;
   }
 }
 
-void Game::setRound0Ms(int ms) {
+void Game::setRound0Ms(uint32_t ms) {
   if (m_round0_ms != ms) {
     m_round0_ms = ms;
   }
 }
 
-void Game::setDecayMs(int ms) {
+void Game::setDecayMs(uint32_t ms) {
   if (m_decay_ms != ms) {
     m_decay_ms = ms;
   }
 }
 
-void Game::setMinMs(int ms) {
+void Game::setMinMs(uint32_t ms) {
   if (m_min_ms != ms) {
     m_min_ms = ms;
   }
@@ -128,9 +128,10 @@ void Game::nextRound() {
     return;
   }
 
-  setRound(m_round + 1);
   setCurrentCmd(randomCmd());
   resetRoundFlags();
+  
+  setRound(m_round + 1);
   markRoundStartAndDeadline();
   broadcastRoundToBlocks();
 }
@@ -144,8 +145,10 @@ void Game::endRound() {
     }
   }
   
-  // Shrink window
-  setCurrentMsWindow(max(m_min_ms, m_current_ms_window - m_decay_ms));
+  // Shrink window - ensure it doesn't go below minimum
+  uint32_t newWindow = (m_current_ms_window > m_decay_ms) ? 
+                       m_current_ms_window - m_decay_ms : m_min_ms;
+  setCurrentMsWindow(max(m_min_ms, newWindow));
 }
 
 void Game::markRoundStartAndDeadline() {
@@ -153,13 +156,13 @@ void Game::markRoundStartAndDeadline() {
   setDeadlineMs(m_round_start_ms + m_current_ms_window);
 }
 
-String Game::randomCmd() {
+Command Game::randomCmd() {
   uint32_t r = (uint32_t)esp_random() % 3;
-  return commandToStr((COMMAND)r);
+  return (Command)r;
 }
 
 // Admin actions
-void Game::startGame(int round0Ms, int decayMs, int minMs) {
+void Game::startGame(uint32_t round0Ms, uint32_t decayMs, uint32_t minMs) {
   if (m_phase != Phase::LOBBY) return; // Can only start from lobby
 
   setPhase(Phase::RUNNING);
@@ -243,7 +246,7 @@ void Game::broadcastRoundToBlocks() {
   JSONVar doc;
   doc["type"] = "round";
   doc["round"] = m_round;
-  doc["cmd"] = m_current_cmd;
+  doc["cmd"] = commandToStr(m_current_cmd);
   doc["roundStartMs"] = (unsigned long)m_round_start_ms;
   doc["gameTimeMs"] = m_current_ms_window;
   doc["deadlineMs"] = (unsigned long)m_deadline_ms;
@@ -264,6 +267,7 @@ String Game::buildGameStateMessage() {
   doc["type"] = "state";
   doc["phase"] = phaseToStr(m_phase);
   doc["round"] = m_round;
+  doc["currentCmd"] = commandToStr(m_current_cmd);
 
   JSONVar arr;
   int i = 0;
@@ -291,11 +295,11 @@ String Game::phaseToStr(Phase ph) {
   }
 }
 
-String Game::commandToStr(COMMAND cmd) {
+String Game::commandToStr(Command cmd) {
   switch (cmd) {
-    case COMMAND::SHAKE: return "SHAKE";
-    case COMMAND::MINE: return "MINE";
-    case COMMAND::PLACE: return "PLACE";
+    case Command::SHAKE: return "SHAKE";
+    case Command::MINE: return "MINE";
+    case Command::PLACE: return "PLACE";
     default: return "SHAKE";
   }
 }
