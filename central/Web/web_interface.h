@@ -116,6 +116,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 
   <h3 id="phaseRound"></h3>
   <h3 id="Round"></h3>
+  <h3 id="Command"></h3>
 
   <table id="table">
     <thead><tr><th>Player</th><th>Block</th><th>In Game</th><th>Score</th><th>Conn</th><th>Rename</th></tr></thead>
@@ -124,7 +125,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 
   <script>
     const ws = new WebSocket(`ws://${window.location.host}/ws`);
-    const state = { phase:'LOBBY', round:0, players:[] };
+    const state = { phase:'LOBBY', round:0, currentCmd:'', players:[] };
     
     ws.onopen = () => {
       document.getElementById('status').textContent = 'Connected';
@@ -140,8 +141,9 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       try {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'state') {
-          state.phase = msg.phase;
-          state.round = msg.round;
+          state.phase = msg.phase || 'LOBBY';
+          state.round = msg.round || 0;
+          state.currentCmd = msg.currentCmd || '';
           state.players = msg.players || [];
           render();
         }
@@ -178,6 +180,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     function render() {
       document.getElementById('phaseRound').textContent = `Phase: ${state.phase}`;
       document.getElementById('Round').textContent = `Round: ${state.round > 0 ? state.round : '-'}`;
+      document.getElementById('Command').textContent = `Command: ${state.round > 0 ? state.currentCmd : '-'}`;
     
       // Enable/disable controls based on game phase
       const isLobby = state.phase === 'LOBBY';

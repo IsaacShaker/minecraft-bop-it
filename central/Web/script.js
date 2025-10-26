@@ -1,5 +1,5 @@
 const ws = new WebSocket(`ws://${window.location.host}/ws`);
-const state = { phase:'LOBBY', round:0, players:[] };
+const state = { phase:'LOBBY', round:0, currentCmd:'', players:[] };
 
 ws.onopen = () => {
   document.getElementById('status').textContent = 'Connected';
@@ -15,8 +15,9 @@ ws.onmessage = (ev) => {
   try {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'state') {
-      state.phase = msg.phase;
-      state.round = msg.round;
+      state.phase = msg.phase || 'LOBBY';
+      state.round = msg.round || 0;
+      state.currentCmd = msg.currentCmd || '';
       state.players = msg.players || [];
       render();
     }
@@ -53,6 +54,7 @@ function renameBlock(bid, name){
 function render() {
   document.getElementById('phaseRound').textContent = `Phase: ${state.phase}`;
   document.getElementById('Round').textContent = `Round: ${state.round > 0 ? state.round : '-'}`;
+  document.getElementById('Command').textContent = `Command: ${state.round > 0 ? state.currentCmd : '-'}`;
 
   // Enable/disable controls based on game phase
   const isLobby = state.phase === 'LOBBY';

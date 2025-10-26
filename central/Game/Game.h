@@ -9,7 +9,7 @@
 #include "../Player/Player.h"
 
 enum class Phase { LOBBY, RUNNING, WAITING_NEXT_ROUND, PAUSED, DONE };
-enum class COMMAND { SHAKE, MINE, PLACE };
+enum class Command { SHAKE, MINE, PLACE };
 
 struct ClientMeta {
   uint32_t id;
@@ -22,7 +22,7 @@ private:
   // Game state
   Phase m_phase;
   int m_round;
-  String m_current_cmd;
+  Command m_current_cmd;
   uint32_t m_current_ms_window;
   uint32_t m_round0_ms;
   uint32_t m_decay_ms;
@@ -50,8 +50,8 @@ public:
   int getRound() const { return m_round; }
   void setRound(int round);
 
-  const String& getCurrentCmd() const { return m_current_cmd; }
-  void setCurrentCmd(const String& cmd);
+  Command getCurrentCmd() const { return m_current_cmd; }
+  void setCurrentCmd(Command cmd);
   
   // Timing
   uint32_t getCurrentMsWindow() const { return m_current_ms_window; }
@@ -92,7 +92,7 @@ public:
   void nextRound();
   void endRound();
   void markRoundStartAndDeadline();
-  String randomCmd();
+  Command randomCmd();
   
   // Admin actions
   void startGame(uint32_t round0Ms = 2500, uint32_t decayMs = 150, uint32_t minMs = 800);
@@ -109,7 +109,7 @@ public:
   // Helper functions
   String buildGameStateMessage();
   static String phaseToStr(Phase ph);
-  static String commandToStr(COMMAND cmd);
+  static String commandToStr(Command cmd);
   
 };
 
