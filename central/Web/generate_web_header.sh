@@ -18,7 +18,7 @@ echo "Generating $HEADER_FILE from $HTML_FILE..."
 # Create the header file with include guards and PROGMEM string
 cat > "$HEADER_FILE" << 'EOF'
 // Auto-generated header file - DO NOT EDIT MANUALLY
-// Generated from data/index.html
+// Generated from Web/index.html
 // Run ./generate_web_header.sh to regenerate
 
 #ifndef WEB_INTERFACE_H
