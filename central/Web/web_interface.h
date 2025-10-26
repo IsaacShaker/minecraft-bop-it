@@ -1,5 +1,5 @@
 // Auto-generated header file - DO NOT EDIT MANUALLY
-// Generated from Web/index.html
+// Generated from Web/index.html, styles.css, and script.js
 // Run ./generate_web_header.sh to regenerate
 
 #ifndef WEB_INTERFACE_H
@@ -15,28 +15,83 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <title>Block Party</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 16px; }
-    #status { padding: 6px 10px; display:inline-block; border-radius:6px; background:#eef; }
-    .badge { padding: 2px 6px; border-radius: 6px; font-size: 12px; }
-    .ok { background:#c6f6d5; }
-    .out { background:#fed7d7; }
-    .disc { background:#e2e8f0; }
-    table { border-collapse: collapse; width: 100%; margin-top:12px; }
-    th, td { border-bottom: 1px solid #eee; text-align: left; padding: 6px 8px; }
-    .column-container { display:flex; flex-direction: column; }
-    .row-container { display:flex; flex-direction: row; gap:8px; align-items: center; flex-wrap: wrap; }
-    input[type=number]{ width:90px; }
-    button { 
-      padding: 4px 8px; 
-      border-radius: 6px; 
-      font-size: 12px; 
-      border: none; 
-      background: #e2e8f0; 
-      cursor: pointer; 
-      font-family: inherit;
+    body {
+        font-family: system-ui, Arial, sans-serif;
+        margin: 16px;
     }
-    button:hover { background: #cbd5e0; }
-    button:active { background: #a0aec0; }
+    
+    #status {
+        padding: 6px 10px;
+        display: inline-block;
+        border-radius: 6px;
+        background: #eef;
+    }
+    
+    .badge {
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 12px;
+    }
+    
+    .ok {
+        background: #c6f6d5;
+    }
+    
+    .out {
+        background: #fed7d7;
+    }
+    
+    .disc {
+        background: #e2e8f0;
+    }
+    
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 12px;
+    }
+    
+    th,
+    td {
+        border-bottom: 1px solid #eee;
+        text-align: left;
+        padding: 6px 8px;
+    }
+    
+    .column-container {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .row-container {
+        display: flex;
+        flex-direction: row;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    
+    input[type=number] {
+        width: 90px;
+    }
+    
+    button {
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        border: none;
+        background: #e2e8f0;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    
+    button:hover {
+        background: #cbd5e0;
+    }
+    
+    button:active {
+        background: #a0aec0;
+    }
   </style>
 </head>
 <body>
@@ -70,15 +125,17 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <script>
     const ws = new WebSocket(`ws://${window.location.host}/ws`);
     const state = { phase:'LOBBY', round:0, players:[] };
-
+    
     ws.onopen = () => {
       document.getElementById('status').textContent = 'Connected';
       // Identify this client as a web interface
       ws.send(JSON.stringify({type: 'web-hello', clientType: 'web'}));
     };
+    
     ws.onclose = () => {
       document.getElementById('status').textContent = 'Disconnected';
     };
+    
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
@@ -90,37 +147,45 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         }
       } catch(e) {}
     };
-
+    
     function sendAdmin(payload) {
       ws.send(JSON.stringify(Object.assign({type:'admin'}, payload)));
     }
-
+    
     function startGame() {
       const round0 = +document.getElementById('round0').value || 2500;
       const decay  = +document.getElementById('decay').value || 150;
       const minms  = +document.getElementById('minms').value || 800;
       sendAdmin({action:'start', round0Ms:round0, decayMs:decay, minMs:minms});
     }
-
-    function pauseGame(){ sendAdmin({action:'pause'}); }
-    function resumeGame(){ sendAdmin({action:'resume'}); }
-    function resetGame(){ sendAdmin({action:'reset'}); }
-
+    
+    function pauseGame(){ 
+      sendAdmin({action:'pause'}); 
+    }
+    
+    function resumeGame(){ 
+      sendAdmin({action:'resume'}); 
+    }
+    
+    function resetGame(){ 
+      sendAdmin({action:'reset'}); 
+    }
+    
     function renameBlock(bid, name){
       sendAdmin({action:'rename', blockId:bid, name});
     }
-
+    
     function render() {
       document.getElementById('phaseRound').textContent = `Phase: ${state.phase}`;
       document.getElementById('Round').textContent = `Round: ${state.round > 0 ? state.round : '-'}`;
-
+    
       // Enable/disable controls based on game phase
       const isLobby = state.phase === 'LOBBY';
       document.getElementById('startBtn').disabled = !isLobby;
       document.getElementById('round0').disabled = !isLobby;
       document.getElementById('decay').disabled = !isLobby;
       document.getElementById('minms').disabled = !isLobby;
-
+    
       const tb = document.querySelector('#table tbody');
       tb.innerHTML = '';
       const sorted = [...state.players].sort((a,b)=> b.score - a.score);
@@ -128,7 +193,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         const tr = document.createElement('tr');
         const inBadge = `<span class="badge ${p.inGame?'ok':'out'}">${p.inGame?'IN':'OUT'}</span>`;
         const cBadge  = `<span class="badge ${p.connected?'ok':'disc'}">${p.connected?'ON':'OFF'}</span>`;
-
+    
         const disabledAttr = isLobby ? '' : 'disabled';
         tr.innerHTML = `
           <td>${p.name}</td>
