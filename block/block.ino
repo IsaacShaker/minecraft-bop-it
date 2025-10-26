@@ -140,6 +140,7 @@ void initializeSensors() {
 }
 
 bool detectMine() {
+  Serial.println("detectMine function called");
   static uint32_t lastChangeTime = 0;
   static int lastReading = HIGH;
   static int stableState = HIGH;
@@ -178,6 +179,8 @@ bool detectMine() {
 
 bool detectShake() {
   /// @todo: read accelerometer
+  Serial.println("detectShake function called");
+
   int16_t ax, ay, az;
   mpu.getAcceleration(&ax, &ay, &az);
   float accelX = ax / 16384.0;
@@ -189,8 +192,9 @@ bool detectShake() {
   float deviation = fabs(magnitude - 1.0);
   if (deviation > 0.4) {
     //do something
-    // delay(500); // Debounce shake detectio
+    // delay(500); // Debounce shake detection
     Serial.println("Shake detected");
+    // delay(500);
     return true;
   }
   
@@ -198,6 +202,7 @@ bool detectShake() {
 }
 
 bool detectPlace() {
+  Serial.println("detectPlace function called");
   static uint32_t lastPlaceTime = 0;
   
   // Debounce RFID detection
@@ -275,10 +280,11 @@ void sendResult() {
 }
 
 void handleRoundMessage(JSONVar& doc) {
-  int newRound = doc.hasOwnProperty("round") ? (int)doc["round"] : -1;
+  int newRound = doc.hasOwnProperty("round") ? (int)doc["round"] : 1;
   
   // Ignore duplicate or old round messages
-  if (newRound <= currentRound && currentRound != -1) {
+  if (newRound <= currentRound && currentRound != 1) {\
+    Serial.println("duplicate round detected");
     return;
   }
   
@@ -288,6 +294,8 @@ void handleRoundMessage(JSONVar& doc) {
   // Extract round parameters
   currentRound = newRound;
   currentCmd = doc.hasOwnProperty("cmd") ? (const char*)doc["cmd"] : "";
+  Serial.print("Handle round message: ");
+  Serial.println(currentCmd);
   roundStartServerMs = doc.hasOwnProperty("roundStartMs") ? (int64_t)(unsigned long)doc["roundStartMs"] : 0;
   deadlineServerMs = doc.hasOwnProperty("deadlineMs") ? (int64_t)(unsigned long)doc["deadlineMs"] : 0;
   gameTimeMs = doc.hasOwnProperty("gameTimeMs") ? (int)doc["gameTimeMs"] : 2000;
@@ -403,6 +411,7 @@ void handleExecutingState() {
   }
 
   // Check for player action based on current command
+  Serial.println(currentCmd);
   bool actionDetected = false;
   if (currentCmd == "MINE") {
     actionDetected = detectMine();
@@ -473,7 +482,8 @@ void setup() {
 }
 
 void loop() {
-  // Process WebSocket events
+  //detectPlace();
+  //Process WebSocket events
   ws.loop();
 
   // Send periodic status updates
