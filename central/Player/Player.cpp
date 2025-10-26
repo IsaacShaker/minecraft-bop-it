@@ -46,12 +46,14 @@ void Player::setLastSeenMs(uint32_t lastSeenMs) {
 void Player::setReported(bool reported) {
   if (m_reported != reported) {
     m_reported = reported;
+    notifyChange();
   }
 }
 
 void Player::setSuccess(bool success) {
   if (m_success != success) {
     m_success = success;
+    notifyChange();
   }
 }
 
@@ -59,6 +61,9 @@ void Player::resetRoundFlags() {
   bool changed = (m_reported != false) || (m_success != false);
   m_reported = false;
   m_success = false;
+  if (changed) {
+    notifyChange();
+  }
 }
 
 void Player::notifyChange() {
