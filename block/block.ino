@@ -22,11 +22,12 @@
 #define WIFI_STATUS_LED 2
 #endif
 
-constexpr int PIN_LED_GREEN = 5;        // Power indicator LED
-constexpr int PIN_LED_BLUE = 2;         // Connection status LED
+constexpr int PIN_LED_GREEN = 27;       // Power indicator LED
+constexpr int PIN_ONBOARD_LED_BLUE = 2; // Connection status LED
 constexpr int PIN_BUTTON = 14;          // Mine action button
 constexpr int PIN_COMMAND_SPEAKER = 4;  // Audio command output
-constexpr int PIN_LED_RED = 13;         // Error/action feedback LED
+constexpr int PIN_LED_RED = 12;         // Error/action feedback LED
+constexpr int PIN_LED_BLUE = 13;        // External Connection feedback LED
 
 // Sensor configuration
 constexpr int MPU6050_SDA = 21;         // Accelerometer I2C data
@@ -324,7 +325,8 @@ void handleRoundMessage(JSONVar& doc) {
 
 void startRoundNow() {
   if (roundStarted) return; // Already started
-  
+  digitalWrite(PIN_LED_RED, LOW); // Clear previous feedback
+  digitalWrite(PIN_LED_GREEN, LOW); // Clear previous feedback
   roundStarted = true;
   startRoundTimer(gameTimeMs);
   speakCommand(currentCmd);
@@ -355,12 +357,14 @@ void handleWsMessage(const String& payload) {
 void wsEvent(WStype_t type, uint8_t* payload, size_t len) {
   switch (type) {
     case WStype_CONNECTED:
+      digitalWrite(PIN_ONBOARD_LED_BLUE, HIGH);
       digitalWrite(PIN_LED_BLUE, HIGH);
       sendHello();
       currentState = State::REGISTERED;
       break;
       
     case WStype_DISCONNECTED:
+      digitalWrite(PIN_ONBOARD_LED_BLUE, LOW);
       digitalWrite(PIN_LED_BLUE, LOW);
       stopRoundTimer();
       roundStarted = false;
@@ -405,6 +409,7 @@ void handleExecutingState() {
   // Check for timeout first
   if (timeExpired) {
     stopRoundTimer();
+    digitalWrite(PIN_LED_RED, HIGH); // Indicate failure
     sendResult();
     currentState = State::REPORTED;
     return;
@@ -421,6 +426,7 @@ void handleExecutingState() {
     actionDetected = detectPlace();
   }
 
+  actionDetected = true;
   // Process successful action
   if (actionDetected && !actionDone) {
     // Stop timer first to prevent race condition
@@ -430,14 +436,9 @@ void handleExecutingState() {
     if (!timeExpired) {
       actionDone = true;
       actionTimeMsLocal = millis();
-      digitalWrite(PIN_LED_RED, HIGH); // Visual feedback
+      digitalWrite(PIN_LED_GREEN, HIGH); // Visual feedback
       sendResult();
       currentState = State::REPORTED;
-      
-      // Turn off feedback LED after short delay
-      delay(200);
-      digitalWrite(PIN_LED_RED, LOW);
-    }
   }
 }
 
@@ -450,14 +451,16 @@ void setup() {
 
   // Configure GPIO pins
   pinMode(PIN_LED_GREEN, OUTPUT);
-  pinMode(PIN_LED_BLUE, OUTPUT);
+  pinMode(PIN_ONBOARD_LED_BLUE, OUTPUT);
   pinMode(PIN_LED_RED, OUTPUT);
+  pinMode(PIN_LED_BLUE, OUTPUT);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   
   // Set initial LED states
-  digitalWrite(PIN_LED_GREEN, HIGH);  // Power indicator
-  digitalWrite(PIN_LED_BLUE, LOW);    // Connection status
+  digitalWrite(PIN_LED_GREEN, HIGH);  // success indicator
+  digitalWrite(PIN_ONBOARD_LED_BLUE, LOW);    // Connection status
   digitalWrite(PIN_LED_RED, LOW);     // Error/action indicator
+  digitalWrite(PIN_LED_BLUE, LOW);    // external connection status
 
   // Load or generate block ID from non-volatile storage
   prefs.begin("block");
