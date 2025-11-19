@@ -187,7 +187,7 @@ bool detectShake() {
   float accelX = ax / 16384.0;
   float accelY = ay / 16384.0;
   float accelZ = az / 16384.0;
-  float magnitude = sqrt(accelX * accelX + accelY * accelY + accelZ * accelZ);\
+  float magnitude = sqrt(accelX * accelX + accelY * accelY + accelZ * accelZ);
 
   // Better shake detection: deviation from 1g
   float deviation = fabs(magnitude - 1.0);
@@ -433,6 +433,7 @@ void handleExecutingState() {
       digitalWrite(PIN_LED_GREEN, HIGH); // Visual feedback
       sendResult();
       currentState = State::REPORTED;
+    }
   }
 }
 
