@@ -91,7 +91,6 @@ uint32_t gameTimeMs = 2000;       // Time allowed for player action
 
 // Action tracking
 bool actionDone = false;
-uint32_t actionTimeMsLocal = 0;   // Local time when action completed
 bool timeExpired = false;         // Set by timer interrupt
 bool roundStarted = false;        // Whether round has begun
 
@@ -297,7 +296,6 @@ void handleRoundMessage(JSONVar& doc) {
   
   // Reset round state
   actionDone = false;
-  actionTimeMsLocal = 0;
   roundStarted = false;
 
   int64_t currentServerTime = nowServerMs();
@@ -411,15 +409,47 @@ void handleExecutingState() {
 
   // Check for player action based on current command
   Serial.println(currentCmd);
-  bool actionDetected = false;
-  if (currentCmd == "MINE") {
-    actionDetected = detectMine();
-  } else if (currentCmd == "SHAKE") {
-    actionDetected = detectShake();
-  } else if (currentCmd == "PLACE") {
-    actionDetected = detectPlace();
+  bool mineDetected = false;
+  bool shakeDetected = false;
+  bool placeDetected = false;
+
+  mineDetected = detectMine();
+  shakeDetected = detectShake();
+  placeDetected = detectPlace();
+
+  // Check if player performed wrong action
+  if (currentCmd == "MINE" && (placeDetected)) {
+    stopRoundTimer();
+    actionDone = false;
+    sendResult();
+    digitalWrite(PIN_LED_RED, HIGH);
+    currentState = State::REPORTED;
+    return;
+  } else if (currentCmd == "SHAKE" && (mineDetected || placeDetected)) {
+    stopRoundTimer();
+    actionDone = false;
+    sendResult();
+    digitalWrite(PIN_LED_RED, HIGH);
+    currentState = State::REPORTED;
+    return;
+  } else if (currentCmd == "PLACE" && (mineDetected)) {
+    stopRoundTimer();
+    actionDone = false;
+    sendResult();
+    digitalWrite(PIN_LED_RED, HIGH);
+    currentState = State::REPORTED;
+    return;
   }
 
+  bool actionDetected = false;
+  if (currentCmd == "MINE") {
+    actionDetected = mineDetected;
+  } else if (currentCmd == "SHAKE") {
+    actionDetected = shakeDetected;
+  } else if (currentCmd == "PLACE") {
+    actionDetected = placeDetected;
+  }
+  
   // Process successful action
   if (actionDetected && !actionDone) {
     // Stop timer first to prevent race condition
@@ -428,7 +458,6 @@ void handleExecutingState() {
     // Only count as success if not expired
     if (!timeExpired) {
       actionDone = true;
-      actionTimeMsLocal = millis();
       sendResult();
       digitalWrite(PIN_LED_GREEN, HIGH); // Visual feedback
       currentState = State::REPORTED;
