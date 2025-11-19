@@ -283,12 +283,6 @@ void sendResult() {
 void handleRoundMessage(JSONVar& doc) {
   int newRound = doc.hasOwnProperty("round") ? (int)doc["round"] : 1;
   
-  // Ignore duplicate or old round messages
-  if (newRound <= currentRound && currentRound != 1) {\
-    Serial.println("duplicate round detected");
-    return;
-  }
-  
   // Clean up any previous round
   stopRoundTimer();
   
