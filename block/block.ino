@@ -403,8 +403,8 @@ void handleExecutingState() {
   // Check for timeout first
   if (timeExpired) {
     stopRoundTimer();
-    digitalWrite(PIN_LED_RED, HIGH); // Indicate failure
     sendResult();
+    digitalWrite(PIN_LED_RED, HIGH); // Indicate failure
     currentState = State::REPORTED;
     return;
   }
@@ -420,7 +420,6 @@ void handleExecutingState() {
     actionDetected = detectPlace();
   }
 
-  actionDetected = true;
   // Process successful action
   if (actionDetected && !actionDone) {
     // Stop timer first to prevent race condition
@@ -430,8 +429,8 @@ void handleExecutingState() {
     if (!timeExpired) {
       actionDone = true;
       actionTimeMsLocal = millis();
-      digitalWrite(PIN_LED_GREEN, HIGH); // Visual feedback
       sendResult();
+      digitalWrite(PIN_LED_GREEN, HIGH); // Visual feedback
       currentState = State::REPORTED;
     }
   }
@@ -452,7 +451,7 @@ void setup() {
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   
   // Set initial LED states
-  digitalWrite(PIN_LED_GREEN, HIGH);  // success indicator
+  digitalWrite(PIN_LED_GREEN, LOW);  // success indicator
   digitalWrite(PIN_ONBOARD_LED_BLUE, LOW);    // Connection status
   digitalWrite(PIN_LED_RED, LOW);     // Error/action indicator
   digitalWrite(PIN_LED_BLUE, LOW);    // external connection status
