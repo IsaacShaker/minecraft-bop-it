@@ -22,11 +22,12 @@
 #define WIFI_STATUS_LED 2
 #endif
 
-constexpr int PIN_LED_GREEN = 5;        // Power indicator LED
-constexpr int PIN_LED_BLUE = 2;         // Connection status LED
+constexpr int PIN_LED_GREEN = 27;       // Power indicator LED
+constexpr int PIN_ONBOARD_LED_BLUE = 2; // Connection status LED
 constexpr int PIN_BUTTON = 14;          // Mine action button
 constexpr int PIN_COMMAND_SPEAKER = 4;  // Audio command output
-constexpr int PIN_LED_RED = 13;         // Error/action feedback LED
+constexpr int PIN_LED_RED = 12;         // Error/action feedback LED
+constexpr int PIN_LED_BLUE = 13;        // External Connection feedback LED
 
 // Sensor configuration
 constexpr int MPU6050_SDA = 21;         // Accelerometer I2C data
@@ -90,7 +91,6 @@ uint32_t gameTimeMs = 2000;       // Time allowed for player action
 
 // Action tracking
 bool actionDone = false;
-uint32_t actionTimeMsLocal = 0;   // Local time when action completed
 bool timeExpired = false;         // Set by timer interrupt
 bool roundStarted = false;        // Whether round has begun
 
@@ -186,7 +186,7 @@ bool detectShake() {
   float accelX = ax / 16384.0;
   float accelY = ay / 16384.0;
   float accelZ = az / 16384.0;
-  float magnitude = sqrt(accelX * accelX + accelY * accelY + accelZ * accelZ);\
+  float magnitude = sqrt(accelX * accelX + accelY * accelY + accelZ * accelZ);
 
   // Better shake detection: deviation from 1g
   float deviation = fabs(magnitude - 1.0);
@@ -282,12 +282,6 @@ void sendResult() {
 void handleRoundMessage(JSONVar& doc) {
   int newRound = doc.hasOwnProperty("round") ? (int)doc["round"] : 1;
   
-  // Ignore duplicate or old round messages
-  if (newRound <= currentRound && currentRound != 1) {\
-    Serial.println("duplicate round detected");
-    return;
-  }
-  
   // Clean up any previous round
   stopRoundTimer();
   
@@ -302,7 +296,6 @@ void handleRoundMessage(JSONVar& doc) {
   
   // Reset round state
   actionDone = false;
-  actionTimeMsLocal = 0;
   roundStarted = false;
 
   int64_t currentServerTime = nowServerMs();
@@ -324,7 +317,8 @@ void handleRoundMessage(JSONVar& doc) {
 
 void startRoundNow() {
   if (roundStarted) return; // Already started
-  
+  digitalWrite(PIN_LED_RED, LOW); // Clear previous feedback
+  digitalWrite(PIN_LED_GREEN, LOW); // Clear previous feedback
   roundStarted = true;
   startRoundTimer(gameTimeMs);
   speakCommand(currentCmd);
@@ -355,12 +349,14 @@ void handleWsMessage(const String& payload) {
 void wsEvent(WStype_t type, uint8_t* payload, size_t len) {
   switch (type) {
     case WStype_CONNECTED:
+      digitalWrite(PIN_ONBOARD_LED_BLUE, HIGH);
       digitalWrite(PIN_LED_BLUE, HIGH);
       sendHello();
       currentState = State::REGISTERED;
       break;
       
     case WStype_DISCONNECTED:
+      digitalWrite(PIN_ONBOARD_LED_BLUE, LOW);
       digitalWrite(PIN_LED_BLUE, LOW);
       stopRoundTimer();
       roundStarted = false;
@@ -406,21 +402,54 @@ void handleExecutingState() {
   if (timeExpired) {
     stopRoundTimer();
     sendResult();
+    digitalWrite(PIN_LED_RED, HIGH); // Indicate failure
     currentState = State::REPORTED;
     return;
   }
 
   // Check for player action based on current command
   Serial.println(currentCmd);
-  bool actionDetected = false;
-  if (currentCmd == "MINE") {
-    actionDetected = detectMine();
-  } else if (currentCmd == "SHAKE") {
-    actionDetected = detectShake();
-  } else if (currentCmd == "PLACE") {
-    actionDetected = detectPlace();
+  bool mineDetected = false;
+  bool shakeDetected = false;
+  bool placeDetected = false;
+
+  mineDetected = detectMine();
+  shakeDetected = detectShake();
+  placeDetected = detectPlace();
+
+  // Check if player performed wrong action
+  if (currentCmd == "MINE" && (placeDetected)) {
+    stopRoundTimer();
+    actionDone = false;
+    sendResult();
+    digitalWrite(PIN_LED_RED, HIGH);
+    currentState = State::REPORTED;
+    return;
+  } else if (currentCmd == "SHAKE" && (mineDetected || placeDetected)) {
+    stopRoundTimer();
+    actionDone = false;
+    sendResult();
+    digitalWrite(PIN_LED_RED, HIGH);
+    currentState = State::REPORTED;
+    return;
+  } else if (currentCmd == "PLACE" && (mineDetected)) {
+    stopRoundTimer();
+    actionDone = false;
+    sendResult();
+    digitalWrite(PIN_LED_RED, HIGH);
+    currentState = State::REPORTED;
+    return;
   }
 
+  bool actionDetected = false;
+  if (currentCmd == "MINE") {
+    actionDetected = mineDetected;
+  } else if (currentCmd == "SHAKE") {
+    actionDetected = shakeDetected;
+  } else if (currentCmd == "PLACE") {
+    actionDetected = placeDetected;
+  }
+  
   // Process successful action
   if (actionDetected && !actionDone) {
     // Stop timer first to prevent race condition
@@ -429,14 +458,9 @@ void handleExecutingState() {
     // Only count as success if not expired
     if (!timeExpired) {
       actionDone = true;
-      actionTimeMsLocal = millis();
-      digitalWrite(PIN_LED_RED, HIGH); // Visual feedback
       sendResult();
+      digitalWrite(PIN_LED_GREEN, HIGH); // Visual feedback
       currentState = State::REPORTED;
-      
-      // Turn off feedback LED after short delay
-      delay(200);
-      digitalWrite(PIN_LED_RED, LOW);
     }
   }
 }
@@ -450,14 +474,16 @@ void setup() {
 
   // Configure GPIO pins
   pinMode(PIN_LED_GREEN, OUTPUT);
-  pinMode(PIN_LED_BLUE, OUTPUT);
+  pinMode(PIN_ONBOARD_LED_BLUE, OUTPUT);
   pinMode(PIN_LED_RED, OUTPUT);
+  pinMode(PIN_LED_BLUE, OUTPUT);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   
   // Set initial LED states
-  digitalWrite(PIN_LED_GREEN, HIGH);  // Power indicator
-  digitalWrite(PIN_LED_BLUE, LOW);    // Connection status
+  digitalWrite(PIN_LED_GREEN, LOW);  // success indicator
+  digitalWrite(PIN_ONBOARD_LED_BLUE, LOW);    // Connection status
   digitalWrite(PIN_LED_RED, LOW);     // Error/action indicator
+  digitalWrite(PIN_LED_BLUE, LOW);    // external connection status
 
   // Load or generate block ID from non-volatile storage
   prefs.begin("block");
